@@ -10,7 +10,7 @@
 [commit]
 	gpgsign = true
 [push]
-	gpgsign = true
+	# gpgsign = true # GitHub doesn't support this yet
 [safe]
 	directory = /Library/Developer/
 [gpg]
