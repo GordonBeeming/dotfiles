@@ -126,7 +126,6 @@ export PATH="$PATH:/Users/gordonbeeming/.dotnet/tools"
 export PATH="$PATH:/Developer/shell"
 
 alias cls=clear
-[1:06 pm] Brook Jeynes [SSW]
 alias size="du -sh"
 alias ".."="cd .."
 
