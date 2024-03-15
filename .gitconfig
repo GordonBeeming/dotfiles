@@ -22,6 +22,9 @@
 [alias]
 	me = !git config --local user.name 'Gordon Beeming' && git config --local user.email 'gpg@gordonbeeming.com' && git config --local user.signingKey 'D1C6C5C67ED8589E!' && echo 'Switched to "Gordon Beeming [Personal]".'
 	ssw = !git config --local user.name 'Gordon Beeming [SSW]' && git config --local user.email 'gordonbeeming@ssw.com.au' && git config --local user.signingKey '0DB5A2459ED2BAAF!' && echo 'Switched to "Gordon Beeming [SSW]".'
-	nb = !git checkout main && git pull && git pull && git checkout -b
-	nb2 = !git checkout master && git pull && git pull && git checkout -b
+	nb = !git checkout main && git pull && git checkout -b
+	nb2 = !git checkout master && git pull && git checkout -b
 	ca = !git add -A && git commit -m
+[gitbutler]
+	gitbutlerCommitter = 1
+	signCommits = true

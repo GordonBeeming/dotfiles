@@ -26,6 +26,7 @@ brew install --cask cleanshot
 brew install --cask unnaturalscrollwheels
 brew install --cask camo-studio
 brew install --cask camtasia
+brew intalll --cask tree
 
 brew install --cask rider
 brew install --cask docker

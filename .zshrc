@@ -126,6 +126,10 @@ export PATH="$PATH:/Users/gordonbeeming/.dotnet/tools"
 export PATH="$PATH:/Developer/shell"
 
 alias cls=clear
+[1:06 pm] Brook Jeynes [SSW]
+alias size="du -sh"
+alias ".."="cd .."
+
 alias nuget="mono /usr/local/bin/nuget.exe"
 
 # To customize prompt, run `p10k configure` or edit ~/.p10k.zsh.
@@ -134,6 +138,8 @@ alias nuget="mono /usr/local/bin/nuget.exe"
 
 # # Load Angular CLI autocompletion.
 # source <(ng completion script)
+
+export PATH="/opt/homebrew/opt/postgresql@16/bin:$PATH"
 
 # CodeWhisperer post block. Keep at the bottom of this file.
 [[ -f "${HOME}/Library/Application Support/codewhisperer/shell/zshrc.post.zsh" ]] && builtin source "${HOME}/Library/Application Support/codewhisperer/shell/zshrc.post.zsh"
