@@ -25,8 +25,8 @@
 	ssw = !git config --local user.name 'Gordon Beeming [SSW • Microsoft MVP]' && git config --local user.email 'gordonbeeming@ssw.com.au' && git config --local gpg.format 'ssh' && git config --local user.signingKey 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMCsRuWh3kYXQZdqpC6USqMpbAI63lXn85O0jFDcnFdR' && echo 'Switched to "Gordon Beeming [SSW • Microsoft MVP] (SSH)".'
 	me2 = !git config --local user.name 'Gordon Beeming' && git config --local user.email 'gpg@gordonbeeming.com' && git config --local user.signingKey 'D1C6C5C67ED8589E!' && echo 'Switched to "Gordon Beeming [Personal] (Yubi Key)".'
 	ssw2 = !git config --local user.name 'Gordon Beeming [SSW • Microsoft MVP]' && git config --local user.email 'gordonbeeming@ssw.com.au' && git config --local user.signingKey '0DB5A2459ED2BAAF!' && echo 'Switched to "Gordon Beeming [SSW • Microsoft MVP] (Yubi Key)".'
-	nb = !git checkout main && git pull && git checkout -b
-	nb2 = !git checkout master && git pull && git checkout -b
+	nb = !git checkout main && git fetch && git pull && git checkout -b
+	nb2 = !git checkout master && git fetch && git pull && git checkout -b
 	ca = !git add -A && git commit -m
 [gitbutler]
 	gitbutlerCommitter = 1
