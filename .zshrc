@@ -114,6 +114,8 @@ source $ZSH/oh-my-zsh.sh
 # alias code="open -n -a 'Visual Studio Code - Insiders' --args $*"
 # export PATH="$PATH:/Applications/Visual Studio Code - Insiders.app/Contents/Resources/app/bin"
 alias code=code-insiders
+alias guid="uuidgen | { read message; echo '$message ... clipboard mate'; echo $message | pbcopy }"
+alias reload="source ~/.zshrc"
 
 export NVM_DIR="$HOME/.nvm"
 [ -s "$(brew --prefix nvm)/nvm.sh" ] && \. "$(brew --prefix nvm)/nvm.sh"  # This loads nvm
