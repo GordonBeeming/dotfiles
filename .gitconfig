@@ -17,7 +17,7 @@
 [gpg]
 	program = gpg2
 [pull]
-	rebase = true
+	rebase = false
 [log]
 	showSignature = true
 [alias]
@@ -33,3 +33,5 @@
 	signCommits = true
 [gpg "ssh"]
 	program = /Applications/1Password.app/Contents/MacOS/op-ssh-sign
+[core]
+	autocrlf = input
