@@ -134,6 +134,8 @@ alias ".."="cd .."
 
 alias nuget="mono /usr/local/bin/nuget.exe"
 
+alias testssl="docker run --rm -ti drwetter/testssl.sh"
+
 # To customize prompt, run `p10k configure` or edit ~/.p10k.zsh.
 [[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh
 
