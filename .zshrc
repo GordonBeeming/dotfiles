@@ -114,7 +114,7 @@ source $ZSH/oh-my-zsh.sh
 # alias code="open -n -a 'Visual Studio Code - Insiders' --args $*"
 # export PATH="$PATH:/Applications/Visual Studio Code - Insiders.app/Contents/Resources/app/bin"
 alias code=code-insiders
-alias guid="uuidgen | { read message; echo '$message ... clipboard mate'; echo $message | pbcopy }"
+alias guid='uuidgen | { read message; echo "$message ... clipboard mate"; echo -n $message | pbcopy }'
 alias reload="source ~/.zshrc"
 alias gitclean="git clean -fX"
 
@@ -135,6 +135,8 @@ alias ".."="cd .."
 alias nuget="mono /usr/local/bin/nuget.exe"
 
 alias testssl="docker run --rm -ti drwetter/testssl.sh"
+
+alias "clear-ds-store"="find . -name ".DS_Store" -type f -delete"
 
 # To customize prompt, run `p10k configure` or edit ~/.p10k.zsh.
 [[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh

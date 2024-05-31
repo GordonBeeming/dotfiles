@@ -35,3 +35,5 @@
 	program = /Applications/1Password.app/Contents/MacOS/op-ssh-sign
 [core]
 	autocrlf = input
+[advice]
+	addIgnoredFile = false
