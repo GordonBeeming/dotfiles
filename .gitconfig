@@ -18,6 +18,7 @@
 	program = gpg2
 [pull]
 	rebase = false
+#	ff = only
 [log]
 	showSignature = true
 [alias]
@@ -25,8 +26,10 @@
 	ssw = !git config --local user.name 'Gordon Beeming [SSW • Microsoft MVP]' && git config --local user.email 'gordonbeeming@ssw.com.au' && git config --local gpg.format 'ssh' && git config --local commit.gpgsign 'true' && git config --local user.signingKey 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMCsRuWh3kYXQZdqpC6USqMpbAI63lXn85O0jFDcnFdR' && echo 'Switched to "Gordon Beeming [SSW • Microsoft MVP] (SSH)".'
 	me2 = !git config --local user.name 'Gordon Beeming' && git config --local user.email 'gpg@gordonbeeming.com' && git config --local commit.gpgsign 'true' && git config --local user.signingKey 'D1C6C5C67ED8589E!' && echo 'Switched to "Gordon Beeming [Personal] (Yubi Key)".'
 	ssw2 = !git config --local user.name 'Gordon Beeming [SSW • Microsoft MVP]' && git config --local user.email 'gordonbeeming@ssw.com.au' && git config --local commit.gpgsign 'true' && git config --local user.signingKey '0DB5A2459ED2BAAF!' && echo 'Switched to "Gordon Beeming [SSW • Microsoft MVP] (Yubi Key)".'
-	nb = !git fetch && git checkout origin/main && git pull origin main && git checkout -b
-	nb2 = !git fetch && git checkout origin/master && git pull origin master && git checkout -b
+	nb = !git fetch && git checkout origin/main && git pull --no-edit origin main && git checkout -b
+	nb2 = !git fetch && git checkout origin/master && git pull --no-edit origin master && git checkout -b
+	update = !git stash && git fetch && git pull --no-edit origin main && git stash pop
+	update2 = !git stash && git fetch && git pull --no-edit origin master && git stash pop
 	ca = !git add -A && git commit -m
 [gitbutler]
 	gitbutlerCommitter = 1
