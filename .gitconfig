@@ -30,6 +30,8 @@
 	nb2 = !git fetch && git checkout origin/master && git pull --no-edit origin master && git checkout -b
 	update = !git stash && git fetch && git pull --no-edit origin main && git stash pop
 	update2 = !git stash && git fetch && git pull --no-edit origin master && git stash pop
+	latest = !git fetch && git pull --no-edit origin main
+	latest2 = !git fetch && git pull --no-edit origin master
 	ca = !git add -A && git commit -m
 [gitbutler]
 	gitbutlerCommitter = 1
@@ -40,3 +42,4 @@
 	autocrlf = input
 [advice]
 	addIgnoredFile = false
+	detachedHead = false
