@@ -118,6 +118,10 @@ alias guid='uuidgen | { read message; echo "$message ... clipboard mate"; echo -
 alias reload="source ~/.zshrc"
 alias gitclean="git clean -fX"
 
+# cd ~
+# mkdir -p jetbrains
+export PATH="$PATH:/Users/gordonbeeming/jetbrains"
+
 export NVM_DIR="$HOME/.nvm"
 [ -s "$(brew --prefix nvm)/nvm.sh" ] && \. "$(brew --prefix nvm)/nvm.sh"  # This loads nvm
 [ -s "$(brew --prefix nvm)/etc/bash_completion.d/nvm" ] && \. "$(brew --prefix nvm)/etc/bash_completion.d/nvm"  # This loads nvm bash_completion
@@ -137,6 +141,9 @@ alias nuget="mono /usr/local/bin/nuget.exe"
 alias testssl="docker run --rm -ti drwetter/testssl.sh"
 
 alias "clear-ds-store"="find . -name ".DS_Store" -type f -delete"
+
+alias expose="ngrok http --region=au "
+alias exposed="ngrok http --region=au --domain=*.ngrok.gordonbeeming.com "
 
 # To customize prompt, run `p10k configure` or edit ~/.p10k.zsh.
 [[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh

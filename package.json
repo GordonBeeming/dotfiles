@@ -1,5 +1,6 @@
 {
   "dependencies": {
+    "@types/k6": "^0.52.0",
     "live-server": "^1.2.2",
     "serve": "^14.2.1"
   }
