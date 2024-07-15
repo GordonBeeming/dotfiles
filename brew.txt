@@ -30,6 +30,7 @@ icu4c
 jpeg-turbo
 jq
 json-c
+k6
 keyring
 krb5
 libassuan
@@ -114,6 +115,7 @@ dotnet-sdk8-0-300
 dotnet-sdk9-preview
 fig
 font-caskaydia-cove-nerd-font
+font-monaspace
 font-monaspace-nerd-font
 iterm2
 microsoft-azure-storage-explorer

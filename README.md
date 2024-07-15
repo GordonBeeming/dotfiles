@@ -52,3 +52,9 @@ nvm install 14
 ## Download apps
 
 - [VS Code Insiders](https://code.visualstudio.com/docs/?dv=osx&build=insiders)
+
+## Update brew.txt
+
+```bash
+brew list > ~/dotfiles/brew.txt
+```
