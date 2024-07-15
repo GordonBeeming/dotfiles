@@ -1,0 +1,31 @@
+// Place your key bindings in this file to override the defaults
+[
+  {
+    "key": "shift+cmd+u",
+    "command": "-workbench.action.output.toggleOutput",
+    "when": "workbench.panel.output.active"
+  },
+  {
+    "key": "ctrl+=",
+    "command": "workbench.action.navigateForward",
+    "when": "canNavigateForward"
+  },
+  {
+    "key": "ctrl+shift+-",
+    "command": "-workbench.action.navigateForward",
+    "when": "canNavigateForward"
+  },
+  {
+    "key": "cmd+u",
+    "command": "-cursorUndo",
+    "when": "textInputFocus"
+  },
+  {
+    "key": "shift+cmd+u",
+    "command": "editor.action.transformToLowercase"
+  },
+  {
+    "key": "cmd+u",
+    "command": "editor.action.transformToUppercase"
+  }
+]
