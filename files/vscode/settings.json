@@ -34,16 +34,11 @@
     "powershell"
   ],
   "cSpell.userWords": [
-    "asfaudits",
     "Beeming",
     "Blazor",
     "Chapsas",
-    "DERBS",
-    "derivco",
-    "devget",
     "Fluxor",
     "greybox",
-    "libget",
     "Liebenberg",
     "Mackay",
     "Maclaren",
@@ -51,7 +46,6 @@
     "OICD",
     "repos",
     "Strava",
-    "Teoh",
     "TFVC"
   ],
   "debug.onTaskErrors": "abort",
@@ -59,6 +53,7 @@
   "docker.showStartPage": false,
   "editor.accessibilitySupport": "off",
   "editor.fontFamily": "'Monaspace Neon', monospace",
+  "editor.fontLigatures": "'calt', 'liga', 'ss01', 'ss02', 'ss03', 'ss04', 'ss05', 'ss06', 'ss07', 'ss08', 'ss09'",
   "editor.formatOnPaste": true,
   "editor.formatOnSave": true,
   "editor.formatOnType": true,
