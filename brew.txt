@@ -67,7 +67,6 @@ nettle
 npth
 nvm
 oniguruma
-openldap
 openssl@3
 p11-kit
 pango
@@ -124,4 +123,5 @@ postman
 raycast
 rectangle
 unnaturalscrollwheels
+warp
 whisky

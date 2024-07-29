@@ -15,3 +15,9 @@ cp "$source_dir/keybindings.json" "$destination_dir"
 cp -R "$source_dir/snippets" "$destination_dir"
 
 echo "VS Code settings backup complete!"
+
+#### BREW ####
+
+brew list > ~/dotfiles/brew.txt
+
+echo "Brew list backup complete!"
