@@ -137,6 +137,7 @@ alias ".."="cd .."
 alias nuget="mono /usr/local/bin/nuget.exe"
 
 alias testssl="docker run --rm -ti drwetter/testssl.sh"
+# alias cloc="docker run --rm -v $PWD:/tmp aldanial/cloc"
 
 alias "clear-ds-store"="find . -name ".DS_Store" -type f -delete"
 
