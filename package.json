@@ -1,6 +1,7 @@
 {
   "dependencies": {
     "@types/k6": "^0.52.0",
+    "autorest": "^3.7.1",
     "live-server": "^1.2.2",
     "serve": "^14.2.1"
   }
