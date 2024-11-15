@@ -41,8 +41,9 @@
 	commit-all = !git add -A && git commit -m
 	ca = !git commit-all
 [gitbutler]
-	gitbutlerCommitter = 1
+	gitbutlerCommitter = 0
 	signCommits = true
+	aiModelProvider = openai
 [gpg "ssh"]
 	program = /Applications/1Password.app/Contents/MacOS/op-ssh-sign
 [core]

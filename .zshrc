@@ -154,3 +154,10 @@ alias exposed="ngrok http --region=au --domain=*.ngrok.gordonbeeming.com "
 export PATH="/opt/homebrew/opt/postgresql@16/bin:$PATH"
 
 eval "$(rbenv init - zsh)"
+# pnpm
+export PNPM_HOME="/Users/gordonbeeming/Library/pnpm"
+case ":$PATH:" in
+  *":$PNPM_HOME:"*) ;;
+  *) export PATH="$PNPM_HOME:$PATH" ;;
+esac
+# pnpm end

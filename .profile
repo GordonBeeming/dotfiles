@@ -4,3 +4,4 @@
 
 # Amazon Q post block. Keep at the bottom of this file.
 [[ -f "${HOME}/Library/Application Support/amazon-q/shell/profile.post.bash" ]] && builtin source "${HOME}/Library/Application Support/amazon-q/shell/profile.post.bash"
+. "$HOME/.cargo/env"
