@@ -140,6 +140,8 @@ alias testssl="docker run --rm -ti drwetter/testssl.sh"
 # alias cloc="docker run --rm -v $PWD:/tmp aldanial/cloc"
 
 alias "clear-ds-store"="find . -name ".DS_Store" -type f -delete"
+alias "clear-bins"="find . -type d -name "bin" -exec rm -rf {} +"
+alias "clear-objs"="find . -type d -name "obj" -exec rm -rf {} +"
 
 alias expose="ngrok http --region=au "
 alias exposed="ngrok http --region=au --domain=*.ngrok.gordonbeeming.com "
