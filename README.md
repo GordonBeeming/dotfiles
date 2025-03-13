@@ -4,8 +4,7 @@ I use [GNU Stow](https://www.gnu.org/software/stow/) to manage them.
 
 ## Installation
 
-I installed most my starting apps from this post from [Matt Wicks](https://www.linkedin.com/in/matt-wicks/)\
-[https://wicksipedia.com/blog/setting-up-a-new-mac](Optimizing Your New Mac Setup: Essential Tools and Apps)
+I installed most my starting apps from this post from [Matt Wicks](https://www.linkedin.com/in/matt-wicks/) [https://wicksipedia.com/blog/setting-up-a-new-mac](Optimizing Your New Mac Setup: Essential Tools and Apps)
 
 ```sh
 brew install git
