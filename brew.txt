@@ -25,8 +25,7 @@ gnutls
 graphite2
 harfbuzz
 hopenpgp-tools
-icu4c
-icu4c@75
+icu4c@76
 jpeg-turbo
 jq
 json-c
@@ -42,6 +41,7 @@ libksba
 libnghttp2
 libpng
 libslirp
+libsodium
 libssh
 libtasn1
 libunistring
@@ -71,7 +71,7 @@ pinentry
 pinentry-mac
 pipx
 pixman
-pkg-config
+pkgconf
 pnpm
 postgresql@16
 powershell
@@ -80,6 +80,7 @@ python-cryptography
 python-packaging
 python@3.11
 python@3.12
+python@3.13
 qemu
 rbenv
 readline
@@ -96,6 +97,7 @@ xz
 ykman
 ykpers
 zstd
+alt-tab
 azure-data-studio
 bartender
 camo-studio
@@ -105,6 +107,7 @@ dotnet-sdk
 dotnet-sdk8
 dotnet-sdk8-0-100
 dotnet-sdk8-0-300
+dotnet-sdk8-0-400
 dotnet-sdk9-preview
 fig
 font-caskaydia-cove-nerd-font
