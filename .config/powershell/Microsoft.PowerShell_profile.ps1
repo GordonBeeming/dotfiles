@@ -1,0 +1,1 @@
+Set-Alias -Name docker -Value podman
