@@ -145,8 +145,8 @@ alias "clear-ds-store"="find . -name ".DS_Store" -type f -delete"
 alias "clear-bins"="find . -type d -name "bin" -exec rm -rf {} +"
 alias "clear-objs"="find . -type d -name "obj" -exec rm -rf {} +"
 
-alias expose="ngrok http --region=au "
-alias exposed="ngrok http --region=au --domain=*.ngrok.gordonbeeming.com "
+export OP_BIOMETRIC_UNLOCK_ENABLED=true
+export SSH_AUTH_SOCK="$HOME/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock"
 
 # To customize prompt, run `p10k configure` or edit ~/.p10k.zsh.
 [[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh
