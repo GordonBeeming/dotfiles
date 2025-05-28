@@ -2,6 +2,7 @@ autoconf
 azd
 azure-cli
 azure-functions-core-tools@4
+bind
 ca-certificates
 cairo
 capstone
@@ -25,7 +26,8 @@ gnutls
 graphite2
 harfbuzz
 hopenpgp-tools
-icu4c@76
+icu4c@77
+jemalloc
 jpeg-turbo
 jq
 json-c
@@ -46,6 +48,7 @@ libssh
 libtasn1
 libunistring
 libusb
+libuv
 libx11
 libxau
 libxcb
@@ -77,7 +80,6 @@ postgresql@16
 powershell
 pycparser
 python-cryptography
-python-packaging
 python@3.11
 python@3.12
 python@3.13
@@ -90,6 +92,7 @@ sqlite
 stow
 tree
 unbound
+userspace-rcu
 vde
 wget
 xorgproto
@@ -97,6 +100,7 @@ xz
 ykman
 ykpers
 zstd
+1password-cli
 alt-tab
 azure-data-studio
 bartender
@@ -111,6 +115,7 @@ dotnet-sdk8-0-400
 dotnet-sdk9-preview
 fig
 font-caskaydia-cove-nerd-font
+font-inter
 font-monaspace
 font-monaspace-nerd-font
 microsoft-azure-storage-explorer

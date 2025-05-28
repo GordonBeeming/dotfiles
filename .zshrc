@@ -138,6 +138,7 @@ alias ".."="cd .."
 
 alias nuget="mono /usr/local/bin/nuget.exe"
 
+alias testssl_update="docker pull drwetter/testssl.sh"
 alias testssl="docker run --rm -ti drwetter/testssl.sh"
 # alias cloc="docker run --rm -v $PWD:/tmp aldanial/cloc"
 
@@ -165,3 +166,8 @@ case ":$PATH:" in
   *) export PATH="$PNPM_HOME:$PATH" ;;
 esac
 # pnpm end
+# The next line updates PATH for the Google Cloud SDK.
+if [ -f '/Users/gordonbeeming/google-cloud-sdk/path.zsh.inc' ]; then . '/Users/gordonbeeming/google-cloud-sdk/path.zsh.inc'; fi
+
+# The next line enables shell command completion for gcloud.
+if [ -f '/Users/gordonbeeming/google-cloud-sdk/completion.zsh.inc' ]; then . '/Users/gordonbeeming/google-cloud-sdk/completion.zsh.inc'; fi
