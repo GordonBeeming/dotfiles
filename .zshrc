@@ -130,7 +130,7 @@ export PATH="$PATH:/Users/gordonbeeming/.dotnet/tools"
 
 export PATH="$PATH:/Developer/shell"
 
-alias docker=podman
+# alias docker=podman
 
 alias cls=clear
 alias size="du -sh"
@@ -176,3 +176,97 @@ fpath=(/Users/gordonbeeming/.docker/completions $fpath)
 autoload -Uz compinit
 compinit
 # End of Docker CLI completions
+
+
+combinecode() {
+  # Check if a file extension is provided as an argument
+  if [ -z "$1" ]; then
+    echo "🚨 Usage: combinecode <file_extension_without_dot>"
+    echo "➡️  Example: combinecode cs"
+    return 1
+  fi
+
+  local file_extension=$1
+  local search_pattern="*.$file_extension"
+  # Get the current directory's name for user-friendly messages
+  local current_dir_display_name=${PWD##*/}
+
+  echo "🔎 Searching for '$search_pattern' files in '$PWD'..."
+
+  # For quick diagnostics, let's see what find sees in the current directory only
+  echo "👀 Diagnostic find (current directory only, files matching pattern):"
+  find . -maxdepth 1 -type f -name "$search_pattern" -print0 | xargs -0 -I {} echo "   Found by diagnostic: {}"
+  echo "---"
+
+  # The main pipeline to find, concatenate, and copy files
+  find . -type f -name "$search_pattern" -print0 | xargs -0 sh -c '
+    processed_any_files=false
+    # "$0" (in this case "_") is the script name placeholder.
+    # Actual file paths from xargs are in "$@".
+    for file_path in "$@"; do
+      # Basic check if file still exists (it should)
+      if [ ! -f "$file_path" ]; then
+        # This message goes to stderr, so it won''t be copied by pbcopy
+        # echo "Warning: File not found by sh script: $file_path" >&2
+        continue
+      fi
+      
+      # Remove leading "./" for cleaner output if present
+      clean_file_path=${file_path#./}
+      
+      printf "--- File: %s ---\n" "$clean_file_path"
+      cat "$file_path"
+      printf "\n\n" # Add two newlines for separation after each file content
+      processed_any_files=true
+    done
+
+    if [ "$processed_any_files" = true ]; then
+      exit 0 # Success, files were processed
+    else
+      exit 1 # No files were processed by the loop
+    fi
+  ' _ | pbcopy # "_" is a convention for the $0 argument to sh -c
+
+  # Store PIPESTATUS elements immediately to avoid them being overwritten
+  local find_status=${PIPESTATUS[1]}
+  local xargs_status=${PIPESTATUS[2]} # This is the exit status of the sh -c script run by xargs
+  local pbcopy_status=${PIPESTATUS[3]}
+
+  echo "--- Debug Information ---"
+  echo "Path: $PWD"
+  echo "Search Pattern: '$search_pattern'"
+  echo "PIPESTATUS: [find: $find_status, xargs(sh): $xargs_status, pbcopy: $pbcopy_status]"
+  echo "-------------------------"
+
+  # Now, let's check the xargs_status (which is the exit status of our sh -c script)
+  if [ -z "$xargs_status" ]; then
+    # This is the most likely cause for your "[: unknown condition: -eq" error
+    echo "⁉️ Error: The script execution status (PIPESTATUS[2]) is unexpectedly empty!"
+    echo "   This could indicate an issue with your shell environment or the pipeline setup in Warp."
+  elif [ "$xargs_status" -eq 0 ]; then
+    # sh -c exited with 0, meaning files were found and processed
+    echo "✅ Combined content of '$search_pattern' files from '$current_dir_display_name/' copied to clipboard! ✨"
+  elif [ "$xargs_status" -eq 1 ]; then
+    # sh -c exited with 1, meaning its loop didn't process any files.
+    # This could be because 'find' found no files, or there was an issue within the loop.
+    if [ "$find_status" -eq 0 ]; then # 'find' command itself ran successfully.
+        echo "🤔 No '$search_pattern' files were ultimately processed from '$current_dir_display_name/'."
+        echo "   The 'find' command reported success, but no files were concatenated."
+        echo "   Please check the 'Diagnostic find' output above. If it lists files, something in the processing loop might be amiss."
+        echo "   Manually run: find . -type f -name \"$search_pattern\""
+    else # 'find' itself reported an error.
+        echo "⚠️ The 'find' command seems to have failed (exit status: $find_status)."
+        echo "   Please check for error messages from 'find' or verify path and permissions."
+    fi
+  else
+    # sh -c (run by xargs) exited with some other error code.
+    echo "⚠️ An unexpected error occurred during script execution (xargs/sh exited with status: $xargs_status)."
+  fi
+  
+  # It's good practice for shell functions to return a status
+  if [ "$xargs_status" = "0" ]; then
+    return 0 # Success
+  else
+    return 1 # Failure
+  fi
+}
