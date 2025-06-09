@@ -130,8 +130,6 @@ export PATH="$PATH:/Users/gordonbeeming/.dotnet/tools"
 
 export PATH="$PATH:/Developer/shell"
 
-# alias docker=podman
-
 alias cls=clear
 alias size="du -sh"
 alias ".."="cd .."
