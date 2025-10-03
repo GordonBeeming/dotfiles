@@ -160,3 +160,128 @@ case ":$PATH:" in
   *) export PATH="$PNPM_HOME:$PATH" ;;
 esac
 # pnpm end
+
+
+copilot_here() {
+  # --- SECURITY CHECK ---
+  # 1. Ensure the 'copilot' scope is present using a robust grep check.
+  if ! gh auth status 2>/dev/null | grep "Token scopes:" | grep -q "'copilot'"; then
+    echo "❌ Error: Your gh token is missing the required 'copilot' scope."
+    echo "Please run 'gh auth refresh -h github.com -s copilot' to add it."
+    return 1
+  fi
+
+  # 2. Warn if the token has highly privileged scopes.
+  if gh auth status 2>/dev/null | grep "Token scopes:" | grep -q -E "'admin:org'|'admin:enterprise'"; then
+    echo "⚠️  Warning: Your GitHub token has highly privileged scopes (e.g.: admin:org, admin:enterprise)."
+    # Use a portable prompt that works in both bash and zsh
+    printf "Are you sure you want to proceed with this token? [y/N]: "
+    read confirmation
+    # Use a portable method to convert to lowercase
+    local lower_confirmation
+    lower_confirmation=$(echo "$confirmation" | tr '[:upper:]' '[:lower:]')
+    if [[ "$lower_confirmation" != "y" && "$lower_confirmation" != "yes" ]]; then
+      echo "Operation cancelled by user."
+      return 1
+    fi
+  fi
+  # --- END SECURITY CHECK ---
+
+  # Define the image name for easy reference
+  local image_name="ghcr.io/gordonbeeming/copilot_here:latest"
+
+  # Pull the latest version of the image to stay up-to-date.
+  echo "Checking for the latest version of copilot_here..."
+  docker pull "$image_name" > /dev/null 2>&1
+
+  # Define path for our persistent copilot config on the host machine.
+  local copilot_config_path="$HOME/.config/copilot-cli-docker"
+  mkdir -p "$copilot_config_path"
+
+  # Use the 'gh' CLI itself to reliably get the current auth token.
+  local token=$(gh auth token 2>/dev/null)
+  if [ -z "$token" ]; then
+    echo "⚠️  Could not retrieve token using 'gh auth token'. Please ensure you are logged in."
+  fi
+
+  # Base Docker command arguments
+  local docker_args=(
+    --rm -it
+    -v "$(pwd)":/work
+    -v "$copilot_config_path":/home/appuser/.copilot
+    -e PUID=$(id -u)
+    -e PGID=$(id -g)
+    -e GITHUB_TOKEN="$token"
+    "$image_name"
+  )
+
+  if [ $# -eq 0 ]; then
+    # No arguments provided, start interactive mode with the banner.
+    docker run "${docker_args[@]}" copilot --banner
+  else
+    # Arguments provided, run in non-interactive (but safe) mode.
+    docker run "${docker_args[@]}" copilot -p "$*"
+  fi
+}
+
+copilot_yolo() {
+  # --- SECURITY CHECK ---
+  # 1. Ensure the 'copilot' scope is present using a robust grep check.
+  if ! gh auth status 2>/dev/null | grep "Token scopes:" | grep -q "'copilot'"; then
+    echo "❌ Error: Your gh token is missing the required 'copilot' scope."
+    echo "Please run 'gh auth refresh -h github.com -s copilot' to add it."
+    return 1
+  fi
+
+  # 2. Warn if the token has highly privileged scopes.
+  if gh auth status 2>/dev/null | grep "Token scopes:" | grep -q -E "'admin:org'|'admin:enterprise'"; then
+    echo "⚠️  Warning: Your GitHub token has highly privileged scopes (e.g.: admin:org, admin:enterprise)."
+    # Use a portable prompt that works in both bash and zsh
+    printf "Are you sure you want to proceed with this token? [y/N]: "
+    read confirmation
+    # Use a portable method to convert to lowercase
+    local lower_confirmation
+    lower_confirmation=$(echo "$confirmation" | tr '[:upper:]' '[:lower:]')
+    if [[ "$lower_confirmation" != "y" && "$lower_confirmation" != "yes" ]]; then
+      echo "Operation cancelled by user."
+      return 1
+    fi
+  fi
+  # --- END SECURITY CHECK ---
+
+  # Define the image name for easy reference
+  local image_name="ghcr.io/gordonbeeming/copilot_here:latest"
+
+  # Pull the latest version of the image to stay up-to-date.
+  echo "Checking for the latest version of copilot_here..."
+  docker pull "$image_name" > /dev/null 2>&1
+
+  # Define path for our persistent copilot config on the host machine.
+  local copilot_config_path="$HOME/.config/copilot-cli-docker"
+  mkdir -p "$copilot_config_path"
+
+  # Use the 'gh' CLI itself to reliably get the current auth token.
+  local token=$(gh auth token 2>/dev/null)
+  if [ -z "$token" ]; then
+    echo "⚠️  Could not retrieve token using 'gh auth token'. Please ensure you are logged in."
+  fi
+
+  # Base Docker command arguments
+  local docker_args=(
+    --rm -it
+    -v "$(pwd)":/work
+    -v "$copilot_config_path":/home/appuser/.copilot
+    -e PUID=$(id -u)
+    -e PGID=$(id -g)
+    -e GITHUB_TOKEN="$token"
+    "$image_name"
+  )
+
+  if [ $# -eq 0 ]; then
+    # No arguments provided, start interactive mode with banner and auto-approval.
+    docker run "${docker_args[@]}" copilot --banner --allow-all-tools
+  else
+    # Arguments provided, run in non-interactive mode with auto-approval.
+    docker run "${docker_args[@]}" copilot -p "$*" --allow-all-tools
+  fi
+}
