@@ -172,12 +172,10 @@ copilot_here() {
   fi
 
   # 2. Warn if the token has highly privileged scopes.
-  if gh auth status 2>/dev/null | grep "Token scopes:" | grep -q -E "'admin:org'|'admin:enterprise'"; then
-    echo "⚠️  Warning: Your GitHub token has highly privileged scopes (e.g.: admin:org, admin:enterprise)."
-    # Use a portable prompt that works in both bash and zsh
+  if gh auth status 2>/dev/null | grep "Token scopes:" | grep -q -E "'(admin:|manage_|write:public_key|delete_repo|(write|delete)_packages)'"; then
+    echo "⚠️  Warning: Your GitHub token has highly privileged scopes (e.g., admin:org, admin:enterprise)."
     printf "Are you sure you want to proceed with this token? [y/N]: "
     read confirmation
-    # Use a portable method to convert to lowercase
     local lower_confirmation
     lower_confirmation=$(echo "$confirmation" | tr '[:upper:]' '[:lower:]')
     if [[ "$lower_confirmation" != "y" && "$lower_confirmation" != "yes" ]]; then
@@ -188,7 +186,7 @@ copilot_here() {
   # --- END SECURITY CHECK ---
 
   # Define the image name for easy reference
-  local image_name="ghcr.io/gordonbeeming/copilot_here:latest"
+  local image_name="ghcr.io/gordonbeeming/copilot_here:dotnet-playwright"
 
   # Pull the latest version of the image to stay up-to-date.
   echo "Checking for the latest version of copilot_here..."
@@ -234,12 +232,10 @@ copilot_yolo() {
   fi
 
   # 2. Warn if the token has highly privileged scopes.
-  if gh auth status 2>/dev/null | grep "Token scopes:" | grep -q -E "'admin:org'|'admin:enterprise'"; then
-    echo "⚠️  Warning: Your GitHub token has highly privileged scopes (e.g.: admin:org, admin:enterprise)."
-    # Use a portable prompt that works in both bash and zsh
+  if gh auth status 2>/dev/null | grep "Token scopes:" | grep -q -E "'(admin:|manage_|write:public_key|delete_repo|(write|delete)_packages)'"; then
+    echo "⚠️  Warning: Your GitHub token has highly privileged scopes (e.g., admin:org, admin:enterprise)."
     printf "Are you sure you want to proceed with this token? [y/N]: "
     read confirmation
-    # Use a portable method to convert to lowercase
     local lower_confirmation
     lower_confirmation=$(echo "$confirmation" | tr '[:upper:]' '[:lower:]')
     if [[ "$lower_confirmation" != "y" && "$lower_confirmation" != "yes" ]]; then
@@ -250,7 +246,7 @@ copilot_yolo() {
   # --- END SECURITY CHECK ---
 
   # Define the image name for easy reference
-  local image_name="ghcr.io/gordonbeeming/copilot_here:latest"
+  local image_name="ghcr.io/gordonbeeming/copilot_here:dotnet-playwright"
 
   # Pull the latest version of the image to stay up-to-date.
   echo "Checking for the latest version of copilot_here..."
