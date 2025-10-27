@@ -1,6 +1,6 @@
 [user]
-	name = xxxxxxx
-	email = xxxxxxx
+	name = Gordon Beeming
+	email = me@gordonbeeming.com
 	signkey = xxxxxxxxxxx
 [tag]
 	gpgsign = true
