@@ -161,5 +161,14 @@ case ":$PATH:" in
 esac
 # pnpm end
 
-alias yolo="copilot_yolo -d"
+yolo() {
+  if [[ "$1" == "--help" ]]; then
+    echo "=== YOLO Command ==="
+    echo "Alias for: copilot_yolo -d"
+    echo ""
+    copilot_yolo --help
+    return 0
+  fi
+  copilot_yolo -d "$@"
+}
 source ~/.copilot_here.sh
