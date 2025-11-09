@@ -1,5 +1,5 @@
 # copilot_here shell functions
-# Version: 2025-11-05.6
+# Version: 2025-11-09
 # Repository: https://github.com/GordonBeeming/copilot_here
 
 # Helper function to detect emoji support
@@ -156,7 +156,7 @@ __copilot_save_mount() {
       echo "🔗 Following symlink to: $config_file"
     fi
     
-    /bin/mkdir -p "$(dirname "$config_file")"
+    /bin/mkdir -p "$(/usr/bin/dirname "$config_file")"
   else
     # For local mounts, keep path as-is (relative is OK for project-specific)
     normalized_path="$path"
@@ -168,11 +168,11 @@ __copilot_save_mount() {
       echo "🔗 Following symlink to: $config_file"
     fi
     
-    /bin/mkdir -p "$(dirname "$config_file")"
+    /bin/mkdir -p "$(/usr/bin/dirname "$config_file")"
   fi
   
   # Check if already exists
-  if [ -f "$config_file" ] && grep -qF "$normalized_path" "$config_file"; then
+  if [ -f "$config_file" ] && /usr/bin/grep -qF "$normalized_path" "$config_file"; then
     echo "⚠️  Mount already exists in config: $normalized_path"
     return 1
   fi
@@ -197,6 +197,34 @@ __copilot_remove_mount() {
   local local_config=".copilot_here/mounts.conf"
   local removed=false
   
+  # Normalize the path similar to save logic
+  local normalized_path
+  if [[ "$path" == "~"* ]]; then
+    normalized_path="$path"
+  elif [[ "$path" == "/"* ]]; then
+    if [[ "$path" == "$HOME"* ]]; then
+      normalized_path="~${path#$HOME}"
+    else
+      normalized_path="$path"
+    fi
+  else
+    local dir_part=$(dirname "$path" 2>/dev/null || echo ".")
+    local base_part=$(basename "$path" 2>/dev/null || echo "$path")
+    local abs_dir=$(cd "$dir_part" 2>/dev/null && pwd || echo "$PWD")
+    normalized_path="$abs_dir/$base_part"
+    
+    if [[ "$normalized_path" == "$HOME"* ]]; then
+      normalized_path="~${normalized_path#$HOME}"
+    fi
+  fi
+  
+  # Extract mount suffix if present (e.g., :rw, :ro)
+  local mount_suffix=""
+  if [[ "$normalized_path" == *:* ]]; then
+    mount_suffix="${normalized_path##*:}"
+    normalized_path="${normalized_path%:*}"
+  fi
+  
   # Check if global config is a symlink and follow it
   if [ -L "$global_config" ]; then
     global_config=$(readlink -f "$global_config" 2>/dev/null || readlink "$global_config")
@@ -207,18 +235,84 @@ __copilot_remove_mount() {
     local_config=$(readlink -f "$local_config" 2>/dev/null || readlink "$local_config")
   fi
   
-  # Try to remove from global config
-  if [ -f "$global_config" ] && grep -qF "$path" "$global_config"; then
-    grep -vF "$path" "$global_config" > "$global_config.tmp" && mv "$global_config.tmp" "$global_config"
-    echo "✅ Removed from global config: $path"
-    removed=true
+  # Try to remove from global config - match both with and without suffix
+  if [ -f "$global_config" ]; then
+    local temp_file="${global_config}.tmp"
+    local found=false
+    local matched_line=""
+    
+    # Ensure temp file is empty
+    /usr/bin/true > "$temp_file"
+    
+    while IFS= read -r line || [ -n "$line" ]; do
+      # Skip empty lines
+      if [ -z "$line" ]; then
+        continue
+      fi
+      
+      local line_without_suffix="${line%:*}"
+      
+      # Match either exact path, path with any suffix, or normalized path
+      if [[ "$line" == "$normalized_path" ]] || \
+         [[ "$line_without_suffix" == "$normalized_path" ]] || \
+         [[ "$line" == "$path" ]] || \
+         [[ "$line_without_suffix" == "$path" ]]; then
+        if [ "$found" = "false" ]; then
+          found=true
+          matched_line="$line"
+        fi
+      else
+        echo "$line" >> "$temp_file"
+      fi
+    done < "$global_config"
+    
+    if [ "$found" = "true" ]; then
+      /bin/mv "$temp_file" "$global_config"
+      echo "✅ Removed from global config: $matched_line"
+      removed=true
+    else
+      /bin/rm -f "$temp_file"
+    fi
   fi
   
-  # Try to remove from local config
-  if [ -f "$local_config" ] && grep -qF "$path" "$local_config"; then
-    grep -vF "$path" "$local_config" > "$local_config.tmp" && mv "$local_config.tmp" "$local_config"
-    echo "✅ Removed from local config: $path"
-    removed=true
+  # Try to remove from local config - match both with and without suffix
+  if [ -f "$local_config" ]; then
+    local temp_file="${local_config}.tmp"
+    local found=false
+    local matched_line=""
+    
+    # Ensure temp file is empty
+    /usr/bin/true > "$temp_file"
+    
+    while IFS= read -r line || [ -n "$line" ]; do
+      # Skip empty lines
+      if [ -z "$line" ]; then
+        continue
+      fi
+      
+      local line_without_suffix="${line%:*}"
+      
+      # Match either exact path, path with any suffix, or normalized path
+      if [[ "$line" == "$normalized_path" ]] || \
+         [[ "$line_without_suffix" == "$normalized_path" ]] || \
+         [[ "$line" == "$path" ]] || \
+         [[ "$line_without_suffix" == "$path" ]]; then
+        if [ "$found" = "false" ]; then
+          found=true
+          matched_line="$line"
+        fi
+      else
+        echo "$line" >> "$temp_file"
+      fi
+    done < "$local_config"
+    
+    if [ "$found" = "true" ]; then
+      /bin/mv "$temp_file" "$local_config"
+      echo "✅ Removed from local config: $matched_line"
+      removed=true
+    else
+      /bin/rm -f "$temp_file"
+    fi
   fi
   
   if [ "$removed" = "false" ]; then
@@ -229,13 +323,13 @@ __copilot_remove_mount() {
 
 # Helper function for security checks (shared by all variants)
 __copilot_security_check() {
-  if ! gh auth status 2>/dev/null | grep "Token scopes:" | grep -q "'copilot'"; then
+  if ! gh auth status 2>/dev/null | /usr/bin/grep "Token scopes:" | /usr/bin/grep -q "'copilot'"; then
     echo "❌ Error: Your gh token is missing the required 'copilot' scope."
     echo "Please run 'gh auth refresh -h github.com -s copilot' to add it."
     return 1
   fi
 
-  if gh auth status 2>/dev/null | grep "Token scopes:" | grep -q -E "'(admin:|manage_|write:public_key|delete_repo|(write|delete)_packages)'"; then
+  if gh auth status 2>/dev/null | /usr/bin/grep "Token scopes:" | /usr/bin/grep -q -E "'(admin:|manage_|write:public_key|delete_repo|(write|delete)_packages)'"; then
     echo "⚠️  Warning: Your GitHub token has highly privileged scopes (e.g., admin:org, admin:enterprise)."
     printf "Are you sure you want to proceed with this token? [y/N]: "
     read confirmation
@@ -258,7 +352,7 @@ __copilot_cleanup_images() {
   local cutoff_date=$(date -d '7 days ago' +%s 2>/dev/null || date -v-7d +%s 2>/dev/null)
   
   # Get all copilot_here images with the project label, excluding <none> tags
-  local all_images=$(docker images --filter "label=project=copilot_here" --format "{{.Repository}}:{{.Tag}}|{{.CreatedAt}}" | grep -v ":<none>" || true)
+  local all_images=$(docker images --filter "label=project=copilot_here" --format "{{.Repository}}:{{.Tag}}|{{.CreatedAt}}" | /usr/bin/grep -v ":<none>" || true)
   
   if [ -z "$all_images" ]; then
     echo "  ✓ No images to clean up"
@@ -522,16 +616,29 @@ __copilot_run() {
     
     # Skip if already seen (CLI overrides config)
     local override=false
-    for i in "${!seen_paths[@]}"; do
-      if [ "${seen_paths[$i]}" = "$resolved_path" ]; then
+    for seen_path in "${seen_paths[@]}"; do
+      if [ "$seen_path" = "$resolved_path" ]; then
         # Replace read-only with read-write
         override=true
-        # Update docker args to rw (need to match on container_path)
-        for j in "${!docker_args[@]}"; do
-          if [[ "${docker_args[$j]}" == "-v" ]] && [[ "${docker_args[$((j+1))]}" == "$resolved_path:$container_path:ro" ]]; then
-            docker_args[$((j+1))]="$resolved_path:$container_path:rw"
+        # Update docker args to rw - rebuild array to avoid bash-specific array indexing
+        local new_docker_args=()
+        local skip_next=false
+        local prev_arg=""
+        for arg in "${docker_args[@]}"; do
+          if [ "$skip_next" = "true" ]; then
+            skip_next=false
+            continue
           fi
+          
+          if [ "$prev_arg" = "-v" ] && [ "$arg" = "$resolved_path:$container_path:ro" ]; then
+            # Replace this mount with rw version
+            new_docker_args+=("$resolved_path:$container_path:rw")
+          else
+            new_docker_args+=("$arg")
+          fi
+          prev_arg="$arg"
         done
+        docker_args=("${new_docker_args[@]}")
         break
       fi
     done
@@ -682,7 +789,7 @@ MODES:
   copilot_here  - Safe mode (asks for confirmation before executing)
   copilot_yolo  - YOLO mode (auto-approves all tool usage + all paths)
 
-VERSION: 2025-11-05.1
+VERSION: 2025-11-09
 REPOSITORY: https://github.com/GordonBeeming/copilot_here
 
 ================================================================================
@@ -768,7 +875,7 @@ EOF
         if [ -f ~/.copilot_here.sh ]; then
           current_version=$(sed -n '2s/# Version: //p' ~/.copilot_here.sh 2>/dev/null)
         elif type copilot_here >/dev/null 2>&1; then
-          current_version=$(type copilot_here | grep "# Version:" | head -1 | sed 's/.*# Version: //')
+          current_version=$(type copilot_here | /usr/bin/grep "# Version:" | head -1 | sed 's/.*# Version: //')
         fi
         
         # Check if using standalone file installation
@@ -840,7 +947,7 @@ EOF
         echo "✅ Created backup"
         
         # Replace script
-        if grep -q "# copilot_here shell functions" "$config_file"; then
+        if /usr/bin/grep -q "# copilot_here shell functions" "$config_file"; then
           awk '/# copilot_here shell functions/,/^}$/ {next} {print}' "$config_file" > "${config_file}.tmp"
           cat "$temp_script" >> "${config_file}.tmp"
           mv "${config_file}.tmp" "$config_file"
@@ -954,7 +1061,7 @@ MODES:
   copilot_here  - Safe mode (asks for confirmation before executing)
   copilot_yolo  - YOLO mode (auto-approves all tool usage + all paths)
 
-VERSION: 2025-11-05.1
+VERSION: 2025-11-09
 REPOSITORY: https://github.com/GordonBeeming/copilot_here
 
 ================================================================================
@@ -1040,7 +1147,7 @@ EOF
         if [ -f ~/.copilot_here.sh ]; then
           current_version=$(sed -n '2s/# Version: //p' ~/.copilot_here.sh 2>/dev/null)
         elif type copilot_here >/dev/null 2>&1; then
-          current_version=$(type copilot_here | grep "# Version:" | head -1 | sed 's/.*# Version: //')
+          current_version=$(type copilot_here | /usr/bin/grep "# Version:" | head -1 | sed 's/.*# Version: //')
         fi
         
         # Check if using standalone file installation
@@ -1112,7 +1219,7 @@ EOF
         echo "✅ Created backup"
         
         # Replace script
-        if grep -q "# copilot_here shell functions" "$config_file"; then
+        if /usr/bin/grep -q "# copilot_here shell functions" "$config_file"; then
           awk '/# copilot_here shell functions/,/^}$/ {next} {print}' "$config_file" > "${config_file}.tmp"
           cat "$temp_script" >> "${config_file}.tmp"
           mv "${config_file}.tmp" "$config_file"
