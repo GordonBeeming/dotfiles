@@ -172,3 +172,6 @@ yolo() {
   copilot_yolo -d "$@"
 }
 source ~/.copilot_here.sh
+
+# Added by get-aspire-cli.sh
+export PATH="$HOME/.aspire/bin:$PATH"
