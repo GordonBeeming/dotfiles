@@ -1,5 +1,5 @@
 # copilot_here shell functions
-# Version: 2025-11-09
+# Version: 2025-11-20.15
 # Repository: https://github.com/GordonBeeming/copilot_here
 
 # Test mode flag (set by tests to skip auth checks)
@@ -324,6 +324,135 @@ __copilot_remove_mount() {
   fi
 }
 
+# Helper function to save default image to config
+__copilot_save_image_config() {
+  local image_tag="$1"
+  local is_global="$2"
+  local config_file
+  
+  if [ "$is_global" = "true" ]; then
+    config_file="$HOME/.config/copilot_here/image.conf"
+    # Check if config file is a symlink and follow it
+    if [ -L "$config_file" ]; then
+      config_file=$(readlink -f "$config_file" 2>/dev/null || readlink "$config_file")
+    fi
+    /bin/mkdir -p "$(/usr/bin/dirname "$config_file")"
+    echo "✅ Saved default image to global config: $image_tag"
+  else
+    config_file=".copilot_here/image.conf"
+    # Check if config file is a symlink and follow it
+    if [ -L "$config_file" ]; then
+      config_file=$(readlink -f "$config_file" 2>/dev/null || readlink "$config_file")
+    fi
+    /bin/mkdir -p "$(/usr/bin/dirname "$config_file")"
+    echo "✅ Saved default image to local config: $image_tag"
+  fi
+  
+  echo "$image_tag" > "$config_file"
+  echo "   Config file: $config_file"
+}
+
+# Helper function to clear default image from config
+__copilot_clear_image_config() {
+  local is_global="$1"
+  local config_file
+  
+  if [ "$is_global" = "true" ]; then
+    config_file="$HOME/.config/copilot_here/image.conf"
+    # Check if config file is a symlink and follow it
+    if [ -L "$config_file" ]; then
+      config_file=$(readlink -f "$config_file" 2>/dev/null || readlink "$config_file")
+    fi
+    
+    if [ -f "$config_file" ]; then
+      rm "$config_file"
+      echo "✅ Cleared default image from global config"
+    else
+      echo "⚠️  No global image config found to clear"
+    fi
+  else
+    config_file=".copilot_here/image.conf"
+    # Check if config file is a symlink and follow it
+    if [ -L "$config_file" ]; then
+      config_file=$(readlink -f "$config_file" 2>/dev/null || readlink "$config_file")
+    fi
+    
+    if [ -f "$config_file" ]; then
+      rm "$config_file"
+      echo "✅ Cleared default image from local config"
+    else
+      echo "⚠️  No local image config found to clear"
+    fi
+  fi
+}
+
+# Helper function to get default image
+__copilot_get_default_image() {
+  local local_config=".copilot_here/image.conf"
+  local global_config="$HOME/.config/copilot_here/image.conf"
+  
+  # Check local config first
+  if [ -f "$local_config" ]; then
+    local image=$(head -n 1 "$local_config" | tr -d '[:space:]')
+    if [ -n "$image" ]; then
+      echo "$image"
+      return 0
+    fi
+  fi
+  
+  # Check global config
+  if [ -f "$global_config" ]; then
+    local image=$(head -n 1 "$global_config" | tr -d '[:space:]')
+    if [ -n "$image" ]; then
+      echo "$image"
+      return 0
+    fi
+  fi
+  
+  # Default
+  echo "latest"
+}
+
+# Helper function to list available images
+__copilot_list_images() {
+  echo "📦 Available Images:"
+  echo "  • latest (Base image)"
+  echo "  • dotnet (.NET 8, 9, 10 SDKs)"
+  echo "  • dotnet-8 (.NET 8 SDK)"
+  echo "  • dotnet-9 (.NET 9 SDK)"
+  echo "  • dotnet-10 (.NET 10 SDK)"
+  echo "  • dotnet-playwright (.NET + Playwright)"
+  echo "  • dotnet-sha-<sha> (Specific commit SHA)"
+}
+
+# Helper function to show default image
+__copilot_show_default_image() {
+  local local_config=".copilot_here/image.conf"
+  local global_config="$HOME/.config/copilot_here/image.conf"
+  local current_default=$(__copilot_get_default_image)
+  
+  echo "🖼️  Image Configuration:"
+  echo "  Current effective default: $current_default"
+  echo ""
+  
+  if [ -f "$local_config" ]; then
+    local local_img=$(head -n 1 "$local_config" | tr -d '[:space:]')
+    echo "  📍 Local config (.copilot_here/image.conf): $local_img"
+  else
+    echo "  📍 Local config: (not set)"
+  fi
+  
+  if [ -f "$global_config" ]; then
+    local global_img=$(head -n 1 "$global_config" | tr -d '[:space:]')
+    echo "  🌍 Global config (~/.config/copilot_here/image.conf): $global_img"
+  else
+    echo "  🌍 Global config: (not set)"
+  fi
+  
+  echo ""
+  echo "  🔧 Base default: latest"
+}
+
 # Helper function for security checks (shared by all variants)
 __copilot_security_check() {
   # Skip in test mode
@@ -331,9 +460,10 @@ __copilot_security_check() {
     return 0
   fi
   
-  if ! gh auth status 2>/dev/null | /usr/bin/grep "Token scopes:" | /usr/bin/grep -q "'copilot'"; then
-    echo "❌ Error: Your gh token is missing the required 'copilot' scope."
-    echo "Please run 'gh auth refresh -h github.com -s copilot' to add it."
+  if ! gh auth status 2>/dev/null | /usr/bin/grep "Token scopes:" | /usr/bin/grep -q "'copilot'" || \
+     ! gh auth status 2>/dev/null | /usr/bin/grep "Token scopes:" | /usr/bin/grep -q "'read:packages'"; then
+    echo "❌ Error: Your gh token is missing the required 'copilot' or 'read:packages' scope."
+    echo "Please run 'gh auth refresh -h github.com -s copilot,read:packages' to add it."
     return 1
   fi
 
@@ -359,8 +489,11 @@ __copilot_cleanup_images() {
   # Get cutoff timestamp (7 days ago)
   local cutoff_date=$(date -d '7 days ago' +%s 2>/dev/null || date -v-7d +%s 2>/dev/null)
   
-  # Get all copilot_here images with the project label, excluding <none> tags
-  local all_images=$(docker images --filter "label=project=copilot_here" --format "{{.Repository}}:{{.Tag}}|{{.CreatedAt}}" | /usr/bin/grep -v ":<none>" || true)
+  # Resolve the ID of the image we want to keep to ensure we don't delete it
+  local keep_image_id=$(docker inspect --format="{{.Id}}" "$keep_image" 2>/dev/null || echo "")
+  
+  # Get all copilot_here images by repository name with full IDs
+  local all_images=$(docker images --no-trunc "ghcr.io/gordonbeeming/copilot_here" --format "{{.ID}}|{{.Repository}}:{{.Tag}}|{{.CreatedAt}}" || true)
   
   if [ -z "$all_images" ]; then
     echo "  ✓ No images to clean up"
@@ -368,17 +501,18 @@ __copilot_cleanup_images() {
   fi
   
   local count=0
-  while IFS='|' read -r image created_at; do
-    if [ -n "$image" ] && [ "$image" != "$keep_image" ]; then
+  while IFS='|' read -r cleanup_image_id cleanup_image_name cleanup_created_at; do
+    # Check if this is the image we want to keep (by ID)
+    if [ -n "$cleanup_image_id" ] && [ "$cleanup_image_id" != "$keep_image_id" ]; then
       # Parse creation date (format: "2025-01-28 12:34:56 +0000 UTC")
-      local image_date=$(date -d "$created_at" +%s 2>/dev/null || date -j -f "%Y-%m-%d %H:%M:%S %z %Z" "$created_at" +%s 2>/dev/null)
+      local image_date=$(date -d "$cleanup_created_at" +%s 2>/dev/null || date -j -f "%Y-%m-%d %H:%M:%S %z %Z" "$cleanup_created_at" +%s 2>/dev/null)
       
       if [ -n "$image_date" ] && [ "$image_date" -lt "$cutoff_date" ]; then
-        echo "  🗑️  Removing old image: $image (created: ${created_at})"
-        if docker rmi "$image" > /dev/null 2>&1; then
+        echo "  🗑️  Removing old image: $cleanup_image_name (ID: ${cleanup_image_id:7:12}...) (created: ${cleanup_created_at})"
+        if docker rmi -f "$cleanup_image_id" > /dev/null 2>&1; then
           ((count++))
         else
-          echo "  ⚠️  Failed to remove: $image (may be in use)"
+          echo "  ⚠️  Failed to remove: $cleanup_image_name (may be in use by running container)"
         fi
       fi
     fi
@@ -468,6 +602,7 @@ __copilot_run() {
     container_work_dir="/home/appuser${relative_path}"
   fi
   
+
   local docker_args=(
     --rm -it
     -v "$current_dir:$container_work_dir"
@@ -695,12 +830,169 @@ __copilot_run() {
     copilot_args+=("$@")
   fi
 
-  docker run "${docker_args[@]}" "${copilot_args[@]}"
+  # Wrap in subshell to safely use trap for title reset
+  (
+    # Set terminal title
+    local title_emoji="🤖"
+    if [ "$allow_all_tools" = "true" ]; then
+      title_emoji="🤖⚡️"
+    fi
+    
+    local current_dir_name=$(basename "$current_dir")
+    local title="${title_emoji} ${current_dir_name}"
+    
+    printf "\033]0;%s\007" "$title"
+    trap 'printf "\033]0;\007"' EXIT
+    
+    docker run "${docker_args[@]}" "${copilot_args[@]}"
+  )
+}
+
+# Helper function to update scripts
+__copilot_update_scripts() {
+  echo "📦 Updating copilot_here scripts from GitHub..."
+  
+  # Get current version
+  local current_version=""
+  if [ -f ~/.copilot_here.sh ]; then
+    current_version=$(sed -n '2s/# Version: //p' ~/.copilot_here.sh 2>/dev/null)
+  elif type copilot_here >/dev/null 2>&1; then
+    current_version=$(type copilot_here | /usr/bin/grep "# Version:" | head -1 | sed 's/.*# Version: //')
+  fi
+  
+  # Check if using standalone file installation
+  if [ -f ~/.copilot_here.sh ]; then
+    echo "✅ Detected standalone installation at ~/.copilot_here.sh"
+    
+    # Check if it's a symlink
+    local target_file=~/.copilot_here.sh
+    if [ -L ~/.copilot_here.sh ]; then
+      target_file=$(readlink -f ~/.copilot_here.sh)
+      echo "🔗 Symlink detected, updating target: $target_file"
+    fi
+    
+    # Download to temp first to check version
+    local temp_script=$(mktemp)
+    if ! curl -fsSL "https://raw.githubusercontent.com/GordonBeeming/copilot_here/main/copilot_here.sh" -o "$temp_script"; then
+      echo "❌ Failed to download script"
+      rm -f "$temp_script"
+      return 1
+    fi
+    
+    local new_version=$(sed -n '2s/# Version: //p' "$temp_script" 2>/dev/null)
+    
+    if [ -n "$current_version" ] && [ -n "$new_version" ]; then
+      echo "📌 Version: $current_version → $new_version"
+    fi
+    
+    # Update the actual file (following symlinks)
+    mv "$temp_script" "$target_file"
+    echo "✅ Scripts updated successfully!"
+    echo "🔄 Reloading..."
+    source ~/.copilot_here.sh
+    echo "✨ Update complete! You're now on version $new_version"
+    return 0
+  fi
+  
+  # Inline installation - update shell config
+  local config_file=""
+  if [ -n "$ZSH_VERSION" ]; then
+    config_file="${ZDOTDIR:-$HOME}/.zshrc"
+  elif [ -n "$BASH_VERSION" ]; then
+    config_file="$HOME/.bashrc"
+  else
+    echo "❌ Unsupported shell. Please update manually."
+    return 1
+  fi
+  
+  if [ ! -f "$config_file" ]; then
+    echo "❌ Shell config not found: $config_file"
+    return 1
+  fi
+  
+  # Download latest
+  local temp_script=$(mktemp)
+  if ! curl -fsSL "https://raw.githubusercontent.com/GordonBeeming/copilot_here/main/copilot_here.sh" -o "$temp_script"; then
+    echo "❌ Failed to download script"
+    rm -f "$temp_script"
+    return 1
+  fi
+  
+  local new_version=$(sed -n '2s/# Version: //p' "$temp_script" 2>/dev/null)
+  
+  if [ -n "$current_version" ] && [ -n "$new_version" ]; then
+    echo "📌 Version: $current_version → $new_version"
+  fi
+  
+  # Backup
+  cp "$config_file" "${config_file}.backup.$(date +%Y%m%d_%H%M%S)"
+  echo "✅ Created backup"
+  
+  # Replace script
+  if /usr/bin/grep -q "# copilot_here shell functions" "$config_file"; then
+    awk '/# copilot_here shell functions/,/^}$/ {next} {print}' "$config_file" > "${config_file}.tmp"
+    cat "$temp_script" >> "${config_file}.tmp"
+    mv "${config_file}.tmp" "$config_file"
+    echo "✅ Scripts updated!"
+  else
+    echo "" >> "$config_file"
+    cat "$temp_script" >> "$config_file"
+    echo "✅ Scripts added!"
+  fi
+  
+  rm -f "$temp_script"
+  echo "🔄 Reloading..."
+  source "$config_file"
+  echo "✨ Update complete! You're now on version $new_version"
+  return 0
+}
+
+# Helper function to check for updates
+__copilot_check_for_updates() {
+  # Skip in test mode
+  if [ "$COPILOT_HERE_TEST_MODE" = "true" ]; then
+    return 0
+  fi
+
+  # Get current version
+  local current_version=""
+  if [ -f ~/.copilot_here.sh ]; then
+    current_version=$(sed -n '2s/# Version: //p' ~/.copilot_here.sh 2>/dev/null)
+  elif type copilot_here >/dev/null 2>&1; then
+    current_version=$(type copilot_here | /usr/bin/grep "# Version:" | head -1 | sed 's/.*# Version: //')
+  fi
+  
+  if [ -z "$current_version" ]; then
+    return 0
+  fi
+
+  # Fetch remote version (with timeout)
+  local remote_version=$(curl -m 2 -fsSL "https://raw.githubusercontent.com/GordonBeeming/copilot_here/main/copilot_here.sh" 2>/dev/null | sed -n '2s/# Version: //p')
+
+  if [ -z "$remote_version" ]; then
+    return 0 # Failed to check or offline
+  fi
+
+  if [ "$current_version" != "$remote_version" ]; then
+     # Check if remote is actually newer using sort -V
+     local newest=$(printf "%s\n%s" "$current_version" "$remote_version" | sort -V | tail -n1)
+     if [ "$newest" = "$remote_version" ]; then
+        echo "📢 Update available: $current_version → $remote_version"
+        printf "Would you like to update now? [y/N]: "
+        read confirmation
+        local lower_confirmation=$(echo "$confirmation" | tr '[:upper:]' '[:lower:]')
+        if [[ "$lower_confirmation" == "y" || "$lower_confirmation" == "yes" ]]; then
+           __copilot_update_scripts
+           return 1 # Updated
+        fi
+     fi
+  fi
+  return 0
 }
 
 # Safe Mode: Asks for confirmation before executing
 copilot_here() {
-  local image_tag="latest"
+  local image_tag=$(__copilot_get_default_image)
   local skip_cleanup="false"
   local skip_pull="false"
   local args=()
@@ -720,9 +1012,13 @@ copilot_here - GitHub Copilot CLI in a secure Docker container (Safe Mode)
 USAGE:
   copilot_here [OPTIONS] [COPILOT_ARGS]
   copilot_here [MOUNT_MANAGEMENT]
+  copilot_here [IMAGE_MANAGEMENT]
 
 OPTIONS:
-  -d, --dotnet              Use .NET image variant
+  -d, --dotnet              Use .NET image variant (all versions)
+  -d8, --dotnet8            Use .NET 8 image variant
+  -d9, --dotnet9            Use .NET 9 image variant
+  -d10, --dotnet10          Use .NET 10 image variant
   -dp, --dotnet-playwright  Use .NET + Playwright image variant
   --mount <path>            Mount additional directory (read-only)
   --mount-rw <path>         Mount additional directory (read-write)
@@ -741,6 +1037,14 @@ MOUNT MANAGEMENT:
   Note: Saved mounts are read-only by default. To save as read-write, add :rw suffix:
  copilot_here --save-mount ~/notes:rw
  copilot_here --save-mount-global ~/data:rw
+
+IMAGE MANAGEMENT:
+  --list-images     List all available Docker images
+  --show-image      Show current default image configuration
+  --set-image <tag> Set default image in local config
+  --set-image-global <tag> Set default image in global config
+  --clear-image     Clear default image from local config
+  --clear-image-global Clear default image from global config
 
 MOUNT CONFIG:
   Mounts can be configured in three ways (priority: CLI > Local > Global):
@@ -778,6 +1082,10 @@ EXAMPLES:
   copilot_here --save-mount-global ~/common-data
   copilot_here --list-mounts
   
+  # Set default image
+  copilot_here --set-image dotnet
+  copilot_here --set-image-global dotnet-sha-bf08e6c875a919cd3440e8b3ebefc5d460edd870
+  
   # Ask a question (short syntax)
   copilot_here -p "how do I list files in bash?"
   
@@ -790,6 +1098,9 @@ EXAMPLES:
   # Use .NET image with custom log level
   copilot_here -d --log-level debug -p "build this .NET project"
   
+  # Use .NET 9 image
+  copilot_here -d9 -p "build this .NET 9 project"
+  
   # Fast mode (skip cleanup and pull)
   copilot_here --no-cleanup --no-pull -p "quick question"
 
@@ -797,7 +1108,7 @@ MODES:
   copilot_here  - Safe mode (asks for confirmation before executing)
   copilot_yolo  - YOLO mode (auto-approves all tool usage + all paths)
 
-VERSION: 2025-11-09
+VERSION: 2025-11-20.12
 REPOSITORY: https://github.com/GordonBeeming/copilot_here
 
 ================================================================================
@@ -841,6 +1152,32 @@ EOF
        __copilot_remove_mount "$1"
        return 0
        ;;
+     --list-images)
+       __copilot_list_images
+       return 0
+       ;;
+     --show-image)
+       __copilot_show_default_image
+       return 0
+       ;;
+     --set-image)
+       shift
+       if [ -z "$1" ]; then
+         echo "❌ Error: --set-image requires an image tag argument"
+         return 1
+       fi
+       __copilot_save_image_config "$1" "false"
+       return 0
+       ;;
+     --set-image-global)
+       shift
+       if [ -z "$1" ]; then
+         echo "❌ Error: --set-image-global requires an image tag argument"
+         return 1
+       fi
+       __copilot_save_image_config "$1" "true"
+       return 0
+       ;;
      --mount)
        shift
        if [ -z "$1" ]; then
@@ -863,6 +1200,18 @@ EOF
         image_tag="dotnet"
         shift
         ;;
+      -d8|--dotnet8)
+        image_tag="dotnet-8"
+        shift
+        ;;
+      -d9|--dotnet9)
+        image_tag="dotnet-9"
+        shift
+        ;;
+      -d10|--dotnet10)
+        image_tag="dotnet-10"
+        shift
+        ;;
       -dp|--dotnet-playwright)
         image_tag="dotnet-playwright"
         shift
@@ -876,101 +1225,8 @@ EOF
         shift
         ;;
       --update-scripts|--upgrade-scripts)
-        echo "📦 Updating copilot_here scripts from GitHub..."
-        
-        # Get current version
-        local current_version=""
-        if [ -f ~/.copilot_here.sh ]; then
-          current_version=$(sed -n '2s/# Version: //p' ~/.copilot_here.sh 2>/dev/null)
-        elif type copilot_here >/dev/null 2>&1; then
-          current_version=$(type copilot_here | /usr/bin/grep "# Version:" | head -1 | sed 's/.*# Version: //')
-        fi
-        
-        # Check if using standalone file installation
-        if [ -f ~/.copilot_here.sh ]; then
-          echo "✅ Detected standalone installation at ~/.copilot_here.sh"
-          
-          # Check if it's a symlink
-          local target_file=~/.copilot_here.sh
-          if [ -L ~/.copilot_here.sh ]; then
-            target_file=$(readlink -f ~/.copilot_here.sh)
-            echo "🔗 Symlink detected, updating target: $target_file"
-          fi
-          
-          # Download to temp first to check version
-          local temp_script=$(mktemp)
-          if ! curl -fsSL "https://raw.githubusercontent.com/GordonBeeming/copilot_here/main/copilot_here.sh" -o "$temp_script"; then
-             Failed to download script"echo "
-            rm -f "$temp_script"
-            return 1
-          fi
-          
-          local new_version=$(sed -n '2s/# Version: //p' "$temp_script" 2>/dev/null)
-          
-          if [ -n "$current_version" ] && [ -n "$new_version" ]; then
-            echo "📌 Version: $current_version → $new_version"
-          fi
-          
-          # Update the actual file (following symlinks)
-          mv "$temp_script" "$target_file"
-          echo "✅ Scripts updated successfully!"
-          echo "🔄 Reloading..."
-          source ~/.copilot_here.sh
-          echo "✨ Update complete! You're now on version $new_version"
-          return 0
-        fi
-        
-        # Inline installation - update shell config
-        local config_file=""
-        if [ -n "$ZSH_VERSION" ]; then
-          config_file="${ZDOTDIR:-$HOME}/.zshrc"
-        elif [ -n "$BASH_VERSION" ]; then
-          config_file="$HOME/.bashrc"
-        else
-          echo "❌ Unsupported shell. Please update manually."
-          return 1
-        fi
-        
-        if [ ! -f "$config_file" ]; then
-          echo "❌ Shell config not found: $config_file"
-          return 1
-        fi
-        
-        # Download latest
-        local temp_script=$(mktemp)
-        if ! curl -fsSL "https://raw.githubusercontent.com/GordonBeeming/copilot_here/main/copilot_here.sh" -o "$temp_script"; then
-          echo "❌ Failed to download script"
-          rm -f "$temp_script"
-          return 1
-        fi
-        
-        local new_version=$(sed -n '2s/# Version: //p' "$temp_script" 2>/dev/null)
-        
-        if [ -n "$current_version" ] && [ -n "$new_version" ]; then
-          echo "📌 Version: $current_version → $new_version"
-        fi
-        
-        # Backup
-        cp "$config_file" "${config_file}.backup.$(date +%Y%m%d_%H%M%S)"
-        echo "✅ Created backup"
-        
-        # Replace script
-        if /usr/bin/grep -q "# copilot_here shell functions" "$config_file"; then
-          awk '/# copilot_here shell functions/,/^}$/ {next} {print}' "$config_file" > "${config_file}.tmp"
-          cat "$temp_script" >> "${config_file}.tmp"
-          mv "${config_file}.tmp" "$config_file"
-          echo "✅ Scripts updated!"
-        else
-          echo "" >> "$config_file"
-          cat "$temp_script" >> "$config_file"
-          echo "✅ Scripts added!"
-        fi
-        
-        rm -f "$temp_script"
-        echo "🔄 Reloading..."
-        source "$config_file"
-        echo "✨ Update complete! You're now on version $new_version"
-        return 0
+        __copilot_update_scripts
+        return $?
         ;;
       *)
         args+=("$1")
@@ -979,12 +1235,14 @@ EOF
     esac
   done
   
+  __copilot_check_for_updates || return 0
+  
   __copilot_run "$image_tag" "false" "$skip_cleanup" "$skip_pull" mounts_ro mounts_rw "${args[@]}"
 }
 
 # YOLO Mode: Auto-approves all tool usage
 copilot_yolo() {
-  local image_tag="latest"
+  local image_tag=$(__copilot_get_default_image)
   local skip_cleanup="false"
   local skip_pull="false"
   local args=()
@@ -1004,9 +1262,13 @@ copilot_yolo - GitHub Copilot CLI in a secure Docker container (YOLO Mode)
 USAGE:
   copilot_yolo [OPTIONS] [COPILOT_ARGS]
   copilot_yolo [MOUNT_MANAGEMENT]
+  copilot_yolo [IMAGE_MANAGEMENT]
 
 OPTIONS:
-  -d, --dotnet              Use .NET image variant
+  -d, --dotnet              Use .NET image variant (all versions)
+  -d8, --dotnet8            Use .NET 8 image variant
+  -d9, --dotnet9            Use .NET 9 image variant
+  -d10, --dotnet10          Use .NET 10 image variant
   -dp, --dotnet-playwright  Use .NET + Playwright image variant
   --mount <path>            Mount additional directory (read-only)
   --mount-rw <path>         Mount additional directory (read-write)
@@ -1025,6 +1287,14 @@ MOUNT MANAGEMENT:
   Note: Saved mounts are read-only by default. To save as read-write, add :rw suffix:
  copilot_yolo --save-mount ~/notes:rw
  copilot_yolo --save-mount-global ~/data:rw
+
+IMAGE MANAGEMENT:
+  --list-images     List all available Docker images
+  --show-image      Show current default image configuration
+  --set-image <tag> Set default image in local config
+  --set-image-global <tag> Set default image in global config
+  --clear-image     Clear default image from local config
+  --clear-image-global Clear default image from global config
 
 COPILOT_ARGS:
   All standard GitHub Copilot CLI arguments are supported:
@@ -1057,6 +1327,9 @@ EXAMPLES:
   # Use .NET + Playwright image
   copilot_yolo -dp -p "write playwright tests"
   
+  # Use .NET 10 image
+  copilot_yolo -d10 -p "explore .NET 10 features"
+  
   # Fast mode (skip cleanup)
   copilot_yolo --no-cleanup -p "generate README"
 
@@ -1069,7 +1342,7 @@ MODES:
   copilot_here  - Safe mode (asks for confirmation before executing)
   copilot_yolo  - YOLO mode (auto-approves all tool usage + all paths)
 
-VERSION: 2025-11-09
+VERSION: 2025-11-20.12
 REPOSITORY: https://github.com/GordonBeeming/copilot_here
 
 ================================================================================
@@ -1113,6 +1386,32 @@ EOF
        __copilot_remove_mount "$1"
        return 0
        ;;
+     --list-images)
+       __copilot_list_images
+       return 0
+       ;;
+     --show-image)
+       __copilot_show_default_image
+       return 0
+       ;;
+     --set-image)
+       shift
+       if [ -z "$1" ]; then
+         echo "❌ Error: --set-image requires an image tag argument"
+         return 1
+       fi
+       __copilot_save_image_config "$1" "false"
+       return 0
+       ;;
+     --set-image-global)
+       shift
+       if [ -z "$1" ]; then
+         echo "❌ Error: --set-image-global requires an image tag argument"
+         return 1
+       fi
+       __copilot_save_image_config "$1" "true"
+       return 0
+       ;;
      --mount)
        shift
        if [ -z "$1" ]; then
@@ -1135,6 +1434,18 @@ EOF
         image_tag="dotnet"
         shift
         ;;
+      -d8|--dotnet8)
+        image_tag="dotnet-8"
+        shift
+        ;;
+      -d9|--dotnet9)
+        image_tag="dotnet-9"
+        shift
+        ;;
+      -d10|--dotnet10)
+        image_tag="dotnet-10"
+        shift
+        ;;
       -dp|--dotnet-playwright)
         image_tag="dotnet-playwright"
         shift
@@ -1148,101 +1459,8 @@ EOF
         shift
         ;;
       --update-scripts|--upgrade-scripts)
-        echo "📦 Updating copilot_here scripts from GitHub..."
-        
-        # Get current version
-        local current_version=""
-        if [ -f ~/.copilot_here.sh ]; then
-          current_version=$(sed -n '2s/# Version: //p' ~/.copilot_here.sh 2>/dev/null)
-        elif type copilot_here >/dev/null 2>&1; then
-          current_version=$(type copilot_here | /usr/bin/grep "# Version:" | head -1 | sed 's/.*# Version: //')
-        fi
-        
-        # Check if using standalone file installation
-        if [ -f ~/.copilot_here.sh ]; then
-          echo "✅ Detected standalone installation at ~/.copilot_here.sh"
-          
-          # Check if it's a symlink
-          local target_file=~/.copilot_here.sh
-          if [ -L ~/.copilot_here.sh ]; then
-            target_file=$(readlink -f ~/.copilot_here.sh)
-            echo "🔗 Symlink detected, updating target: $target_file"
-          fi
-          
-          # Download to temp first to check version
-          local temp_script=$(mktemp)
-          if ! curl -fsSL "https://raw.githubusercontent.com/GordonBeeming/copilot_here/main/copilot_here.sh" -o "$temp_script"; then
-             Failed to download script"echo "
-            rm -f "$temp_script"
-            return 1
-          fi
-          
-          local new_version=$(sed -n '2s/# Version: //p' "$temp_script" 2>/dev/null)
-          
-          if [ -n "$current_version" ] && [ -n "$new_version" ]; then
-            echo "📌 Version: $current_version → $new_version"
-          fi
-          
-          # Update the actual file (following symlinks)
-          mv "$temp_script" "$target_file"
-          echo "✅ Scripts updated successfully!"
-          echo "🔄 Reloading..."
-          source ~/.copilot_here.sh
-          echo "✨ Update complete! You're now on version $new_version"
-          return 0
-        fi
-        
-        # Inline installation - update shell config
-        local config_file=""
-        if [ -n "$ZSH_VERSION" ]; then
-          config_file="${ZDOTDIR:-$HOME}/.zshrc"
-        elif [ -n "$BASH_VERSION" ]; then
-          config_file="$HOME/.bashrc"
-        else
-          echo "❌ Unsupported shell. Please update manually."
-          return 1
-        fi
-        
-        if [ ! -f "$config_file" ]; then
-          echo "❌ Shell config not found: $config_file"
-          return 1
-        fi
-        
-        # Download latest
-        local temp_script=$(mktemp)
-        if ! curl -fsSL "https://raw.githubusercontent.com/GordonBeeming/copilot_here/main/copilot_here.sh" -o "$temp_script"; then
-          echo "❌ Failed to download script"
-          rm -f "$temp_script"
-          return 1
-        fi
-        
-        local new_version=$(sed -n '2s/# Version: //p' "$temp_script" 2>/dev/null)
-        
-        if [ -n "$current_version" ] && [ -n "$new_version" ]; then
-          echo "📌 Version: $current_version → $new_version"
-        fi
-        
-        # Backup
-        cp "$config_file" "${config_file}.backup.$(date +%Y%m%d_%H%M%S)"
-        echo "✅ Created backup"
-        
-        # Replace script
-        if /usr/bin/grep -q "# copilot_here shell functions" "$config_file"; then
-          awk '/# copilot_here shell functions/,/^}$/ {next} {print}' "$config_file" > "${config_file}.tmp"
-          cat "$temp_script" >> "${config_file}.tmp"
-          mv "${config_file}.tmp" "$config_file"
-          echo "✅ Scripts updated!"
-        else
-          echo "" >> "$config_file"
-          cat "$temp_script" >> "$config_file"
-          echo "✅ Scripts added!"
-        fi
-        
-        rm -f "$temp_script"
-        echo "🔄 Reloading..."
-        source "$config_file"
-        echo "✨ Update complete! You're now on version $new_version"
-        return 0
+        __copilot_update_scripts
+        return $?
         ;;
       *)
         args+=("$1")
@@ -1250,6 +1468,8 @@ EOF
         ;;
     esac
   done
+  
+  __copilot_check_for_updates || return 0
   
   __copilot_run "$image_tag" "true" "$skip_cleanup" "$skip_pull" mounts_ro mounts_rw "${args[@]}"
 }

@@ -164,12 +164,12 @@ esac
 yolo() {
   if [[ "$1" == "--help" ]]; then
     echo "=== YOLO Command ==="
-    echo "Alias for: copilot_yolo -d"
+    echo "Alias for: copilot_yolo"
     echo ""
     copilot_yolo --help
     return 0
   fi
-  copilot_yolo -d "$@"
+  copilot_yolo "$@"
 }
 source ~/.copilot_here.sh
 
