@@ -113,7 +113,7 @@ source $ZSH/oh-my-zsh.sh
 # export PATH="$PATH:/Applications/Visual Studio Code - Insiders.app/Contents/Resources/app/bin"
 alias code=code-insiders
 alias guid='uuidgen | { read message; echo "$message ... clipboard mate"; echo -n $message | pbcopy }'
-alias reload="source ~/.zshrc"
+alias reload="source ~/.zshrc;source ~/.copilot_here.sh"
 alias gitclean="git clean -fX"
 
 # cd ~
@@ -175,3 +175,13 @@ source ~/.copilot_here.sh
 
 # Added by get-aspire-cli.sh
 export PATH="$HOME/.aspire/bin:$PATH"
+
+# >>> copilot_here >>>
+# Ensure user bin directory is on PATH
+if [ -d "$HOME/.local/bin" ] && [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
+  export PATH="$HOME/.local/bin:$PATH"
+fi
+if [ -f "$HOME/.copilot_here.sh" ]; then
+  source "$HOME/.copilot_here.sh"
+fi
+# <<< copilot_here <<<

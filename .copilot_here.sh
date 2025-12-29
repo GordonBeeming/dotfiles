@@ -1,1475 +1,403 @@
 # copilot_here shell functions
-# Version: 2025-11-20.15
+# Version: 2025.12.29.39
 # Repository: https://github.com/GordonBeeming/copilot_here
 
-# Test mode flag (set by tests to skip auth checks)
-COPILOT_HERE_TEST_MODE="${COPILOT_HERE_TEST_MODE:-false}"
+# Configuration
+COPILOT_HERE_BIN="${COPILOT_HERE_BIN:-$HOME/.local/bin/copilot_here}"
+COPILOT_HERE_RELEASE_URL="https://github.com/GordonBeeming/copilot_here/releases/download/cli-latest"
+COPILOT_HERE_VERSION="2025.12.29.39"
 
-# Helper function to detect emoji support
-__copilot_supports_emoji() {
-  [[ "$LANG" == *"UTF-8"* ]] && [[ "$TERM" != "dumb" ]]
-}
-
-# Helper function to load mounts from config file
-__copilot_load_mounts() {
-  local config_file="$1"
-  local var_name="$2"
-  local actual_file="$config_file"
-  
-  # Follow symlink if config file is a symlink
-  if [ -L "$config_file" ]; then
-    actual_file=$(readlink -f "$config_file" 2>/dev/null || readlink "$config_file")
-  fi
-  
-  if [ -f "$actual_file" ]; then
-    while IFS= read -r line || [ -n "$line" ]; do
-      # Skip empty lines, whitespace-only lines, and comments
-      [[ -z "$line" || "$line" =~ ^[[:space:]]*$ || "$line" =~ ^[[:space:]]*# ]] && continue
-      eval "${var_name}+=(\"\$line\")"
-    done < "$actual_file"
+# Debug logging function
+__copilot_debug() {
+  if [ "$COPILOT_HERE_DEBUG" = "1" ] || [ "$COPILOT_HERE_DEBUG" = "true" ]; then
+    echo "[DEBUG] $*" >&2
   fi
 }
 
-# Helper function to resolve and validate mount path
-__copilot_resolve_mount_path() {
-  local path="$1"
-  local resolved_path
+# Returns 0 if version A is newer than version B
+__copilot_version_is_newer() {
+  awk -v a="$1" -v b="$2" '
+    function pad(arr, n, i) { for (i = n + 1; i <= 4; i++) arr[i] = 0 }
+    BEGIN {
+      na = split(a, A, ".");
+      nb = split(b, B, ".");
+      pad(A, na);
+      pad(B, nb);
+      for (i = 1; i <= 4; i++) {
+        if ((A[i] + 0) > (B[i] + 0)) exit 0;
+        if ((A[i] + 0) < (B[i] + 0)) exit 1;
+      }
+      exit 1;
+    }' >/dev/null 2>&1
+}
+
+# Helper function to stop running containers with confirmation
+__copilot_stop_containers() {
+  local running_containers
+  running_containers=$(docker ps --filter "name=copilot_here-" -q 2>/dev/null)
   
-  # Expand tilde
-  if [[ "$path" == "~"* ]]; then
-    # Remove leading ~ and prepend HOME (works in both bash and zsh)
-    local path_without_tilde="${path#\~}"
-    resolved_path="${HOME}${path_without_tilde}"
-  # Handle relative paths
-  elif [[ "$path" != "/"* ]]; then
-    local dir_part=$(dirname "$path" 2>/dev/null || echo ".")
-    local base_part=$(basename "$path" 2>/dev/null || echo "$path")
-    local abs_dir=$(cd "$dir_part" 2>/dev/null && pwd || echo "$PWD")
-    resolved_path="$abs_dir/$base_part"
-  else
-    resolved_path="$path"
+  if [ -n "$running_containers" ]; then
+    echo "⚠️  copilot_here is currently running in Docker"
+    printf "   Stop running containers to continue? [y/N]: "
+    read -r response
+    local lower_response
+    lower_response=$(echo "$response" | tr '[:upper:]' '[:lower:]')
+    if [ "$lower_response" = "y" ] || [ "$lower_response" = "yes" ]; then
+      echo "🛑 Stopping copilot_here containers..."
+      docker stop $running_containers 2>/dev/null
+      echo "   ✓ Stopped"
+      return 0
+    else
+      echo "❌ Cannot update while containers are running (binary is in use)"
+      return 1
+    fi
   fi
+  return 0
+}
+
+# Helper function to download and install binary
+__copilot_download_binary() {
+  __copilot_debug "Downloading binary..."
   
-  # Warn if path doesn't exist
-  if [ ! -e "$resolved_path" ]; then
-    echo "⚠️  Warning: Path does not exist: $resolved_path" >&2
-  fi
+  # Detect OS and architecture
+  local os=""
+  local arch=""
   
-  # Security warning for sensitive paths - require confirmation
-  case "$resolved_path" in
-    /|/etc|/etc/*|~/.ssh|~/.ssh/*|/root|/root/*)
-      echo "⚠️  Warning: Mounting sensitive system path: $resolved_path" >&2
-      printf "Are you sure you want to mount this sensitive path? [y/N]: " >&2
-      read confirmation
-      local lower_confirmation
-      lower_confirmation=$(echo "$confirmation" | tr '[:upper:]' '[:lower:]')
-      if [[ "$lower_confirmation" != "y" && "$lower_confirmation" != "yes" ]]; then
-        echo "Operation cancelled by user." >&2
-        return 1
-      fi
-      ;;
+  case "$(uname -s)" in
+    Linux*)  os="linux" ;;
+    Darwin*) os="osx" ;;
+    *)       echo "❌ Unsupported OS: $(uname -s)"; return 1 ;;
   esac
   
-  echo "$resolved_path"
+  case "$(uname -m)" in
+    x86_64)  arch="x64" ;;
+    aarch64|arm64) arch="arm64" ;;
+    *)       echo "❌ Unsupported architecture: $(uname -m)"; return 1 ;;
+  esac
+  
+  __copilot_debug "OS: $os, Arch: $arch"
+  
+  # Create bin directory
+  local bin_dir
+  bin_dir="$(dirname "$COPILOT_HERE_BIN")"
+  mkdir -p "$bin_dir"
+  
+  # Download latest release archive
+  local download_url="${COPILOT_HERE_RELEASE_URL}/copilot_here-${os}-${arch}.tar.gz"
+  local tmp_archive
+  tmp_archive="$(mktemp)"
+  
+  echo "📦 Downloading binary from: $download_url"
+  if ! curl -fsSL "$download_url" -o "$tmp_archive"; then
+    rm -f "$tmp_archive"
+    echo "❌ Failed to download binary"
+    return 1
+  fi
+  
+  # Extract binary from archive
+  if ! tar -xzf "$tmp_archive" -C "$bin_dir" copilot_here; then
+    rm -f "$tmp_archive"
+    echo "❌ Failed to extract binary"
+    return 1
+  fi
+  
+  rm -f "$tmp_archive"
+  chmod +x "$COPILOT_HERE_BIN"
+  echo "✅ Binary installed to: $COPILOT_HERE_BIN"
+  return 0
 }
 
-# Helper function to display mounts list
-__copilot_list_mounts() {
-  local global_config="$HOME/.config/copilot_here/mounts.conf"
-  local local_config=".copilot_here/mounts.conf"
+# Helper function to ensure binary is installed
+__copilot_ensure_binary() {
+  __copilot_debug "Checking for binary at: $COPILOT_HERE_BIN"
   
-  local global_mounts=()
-  local local_mounts=()
+  if [ ! -f "$COPILOT_HERE_BIN" ]; then
+    echo "📥 copilot_here binary not found. Installing..."
+    __copilot_download_binary
+  else
+    __copilot_debug "Binary found"
+  fi
   
-  __copilot_load_mounts "$global_config" global_mounts
-  __copilot_load_mounts "$local_config" local_mounts
+  return 0
+}
+
+# Update function - downloads fresh shell script and binary
+__copilot_update() {
+  echo "🔄 Updating copilot_here..."
   
-  if [ ${#global_mounts[@]} -eq 0 ] && [ ${#local_mounts[@]} -eq 0 ]; then
-    echo "📂 No saved mounts configured"
+  # Check and stop running containers
+  if ! __copilot_stop_containers; then
+    return 1
+  fi
+  
+  # Download fresh binary
+  echo ""
+  echo "📥 Downloading latest binary..."
+  if [ -f "$COPILOT_HERE_BIN" ]; then
+    rm -f "$COPILOT_HERE_BIN"
+  fi
+  if ! __copilot_download_binary; then
+    echo "❌ Failed to download binary"
+    return 1
+  fi
+  
+  # Download and source fresh shell script
+  echo ""
+  echo "📥 Downloading latest shell script..."
+  local script_path="$HOME/.copilot_here.sh"
+  local tmp_script
+  tmp_script="$(mktemp)"
+  if curl -fsSL "${COPILOT_HERE_RELEASE_URL}/copilot_here.sh" -o "$tmp_script" 2>/dev/null; then
+    if cat "$tmp_script" > "$script_path" 2>/dev/null; then
+      rm -f "$tmp_script"
+      
+      # Update shell profiles with marker blocks
+      echo ""
+      echo "🔧 Updating shell profiles..."
+      __copilot_update_profile "$HOME/.bashrc" "bash (.bashrc)"
+      __copilot_update_profile "$HOME/.zshrc" "zsh (.zshrc)"
+      echo "✅ Profiles updated"
+      
+      echo "✅ Update complete! Reloading shell functions..."
+      # shellcheck disable=SC1090
+      source "$script_path"
+      echo ""
+      echo "[VERSION] Script: $COPILOT_HERE_VERSION"
+      if [ -x "$COPILOT_HERE_BIN" ]; then
+        BIN_VERSION=$($COPILOT_HERE_BIN --version 2>/dev/null | head -n 1)
+        if [ -n "$BIN_VERSION" ]; then
+          echo "[VERSION] Binary: $BIN_VERSION"
+        fi
+      fi
+      echo ""
+    else
+      rm -f "$tmp_script"
+      echo "✅ Binary updated!"
+      echo ""
+      echo "⚠️  Could not write updated shell script to: $script_path"
+      echo "   Please re-source manually:"
+      echo "   source <(curl -fsSL ${COPILOT_HERE_RELEASE_URL}/copilot_here.sh)"
+      echo ""
+      echo "   Or restart your terminal."
+    fi
+  else
+    rm -f "$tmp_script"
     echo ""
-    echo "Add mounts with:"
-    echo "  copilot_here --save-mount <path>         # Save to local config"
-    echo "  copilot_here --save-mount-global <path>  # Save to global config"
-    return 0
-  fi
-  
-  echo "📂 Saved mounts:"
-  
-  if __copilot_supports_emoji; then
-    for mount in "${global_mounts[@]}"; do
-      echo "  🌍 $mount"
-    done
-    for mount in "${local_mounts[@]}"; do
-      echo "  📍 $mount"
-    done
-  else
-    for mount in "${global_mounts[@]}"; do
-      echo "  G: $mount"
-    done
-    for mount in "${local_mounts[@]}"; do
-      echo "  L: $mount"
-    done
-  fi
-  
-  echo ""
-  echo "Config files:"
-  echo "  Global: $global_config"
-  echo "  Local:  $local_config"
-}
-
-# Helper function to save mount to config
-__copilot_save_mount() {
-  local path="$1"
-  local is_global="$2"
-  local config_file
-  local normalized_path
-  
-  # Normalize path to absolute or home-relative for global mounts
-  if [ "$is_global" = "true" ]; then
-    # For global mounts, convert to absolute or ~/... format
-    if [[ "$path" == "~"* ]]; then
-      # Keep tilde format for home directory
-      normalized_path="$path"
-    elif [[ "$path" == "/"* ]]; then
-      # Already absolute - check if it's in home directory
-      if [[ "$path" == "$HOME"* ]]; then
-        # Convert to tilde format
-        normalized_path="~${path#$HOME}"
-      else
-        normalized_path="$path"
-      fi
-    else
-      # Relative path - convert to absolute
-      local dir_part=$(dirname "$path" 2>/dev/null || echo ".")
-      local base_part=$(basename "$path" 2>/dev/null || echo "$path")
-      local abs_dir=$(cd "$dir_part" 2>/dev/null && pwd || echo "$PWD")
-      normalized_path="$abs_dir/$base_part"
-      
-      # If it's in home directory, convert to tilde format
-      if [[ "$normalized_path" == "$HOME"* ]]; then
-        normalized_path="~${normalized_path#$HOME}"
-      fi
-    fi
-    
-    config_file="$HOME/.config/copilot_here/mounts.conf"
-    
-    # Check if config file is a symlink and follow it
-    if [ -L "$config_file" ]; then
-      config_file=$(readlink -f "$config_file" 2>/dev/null || readlink "$config_file")
-      echo "🔗 Following symlink to: $config_file"
-    fi
-    
-    /bin/mkdir -p "$(/usr/bin/dirname "$config_file")"
-  else
-    # For local mounts, keep path as-is (relative is OK for project-specific)
-    normalized_path="$path"
-    config_file=".copilot_here/mounts.conf"
-    
-    # Check if config file is a symlink and follow it
-    if [ -L "$config_file" ]; then
-      config_file=$(readlink -f "$config_file" 2>/dev/null || readlink "$config_file")
-      echo "🔗 Following symlink to: $config_file"
-    fi
-    
-    /bin/mkdir -p "$(/usr/bin/dirname "$config_file")"
-  fi
-  
-  # Check if already exists
-  if [ -f "$config_file" ] && /usr/bin/grep -qF "$normalized_path" "$config_file"; then
-    echo "⚠️  Mount already exists in config: $normalized_path"
-    return 1
-  fi
-  
-  echo "$normalized_path" >> "$config_file"
-  
-  if [ "$is_global" = "true" ]; then
-    echo "✅ Saved to global config: $normalized_path"
-    if [ "$normalized_path" != "$path" ]; then
-      echo "   (normalized from: $path)"
-    fi
-  else
-    echo "✅ Saved to local config: $normalized_path"
-  fi
-  echo "   Config file: $config_file"
-}
-
-# Helper function to remove mount from config
-__copilot_remove_mount() {
-  local path="$1"
-  local global_config="$HOME/.config/copilot_here/mounts.conf"
-  local local_config=".copilot_here/mounts.conf"
-  local removed=false
-  
-  # Normalize the path similar to save logic
-  local normalized_path
-  if [[ "$path" == "~"* ]]; then
-    normalized_path="$path"
-  elif [[ "$path" == "/"* ]]; then
-    if [[ "$path" == "$HOME"* ]]; then
-      normalized_path="~${path#$HOME}"
-    else
-      normalized_path="$path"
-    fi
-  else
-    local dir_part=$(dirname "$path" 2>/dev/null || echo ".")
-    local base_part=$(basename "$path" 2>/dev/null || echo "$path")
-    local abs_dir=$(cd "$dir_part" 2>/dev/null && pwd || echo "$PWD")
-    normalized_path="$abs_dir/$base_part"
-    
-    if [[ "$normalized_path" == "$HOME"* ]]; then
-      normalized_path="~${normalized_path#$HOME}"
-    fi
-  fi
-  
-  # Extract mount suffix if present (e.g., :rw, :ro)
-  local mount_suffix=""
-  if [[ "$normalized_path" == *:* ]]; then
-    mount_suffix="${normalized_path##*:}"
-    normalized_path="${normalized_path%:*}"
-  fi
-  
-  # Check if global config is a symlink and follow it
-  if [ -L "$global_config" ]; then
-    global_config=$(readlink -f "$global_config" 2>/dev/null || readlink "$global_config")
-  fi
-  
-  # Check if local config is a symlink and follow it
-  if [ -L "$local_config" ]; then
-    local_config=$(readlink -f "$local_config" 2>/dev/null || readlink "$local_config")
-  fi
-  
-  # Try to remove from global config - match both with and without suffix
-  if [ -f "$global_config" ]; then
-    local temp_file="${global_config}.tmp"
-    local found=false
-    local matched_line=""
-    
-    # Ensure temp file is empty
-    /usr/bin/true > "$temp_file"
-    
-    while IFS= read -r line || [ -n "$line" ]; do
-      # Skip empty lines
-      if [ -z "$line" ]; then
-        continue
-      fi
-      
-      local line_without_suffix="${line%:*}"
-      
-      # Match either exact path, path with any suffix, or normalized path
-      if [[ "$line" == "$normalized_path" ]] || \
-         [[ "$line_without_suffix" == "$normalized_path" ]] || \
-         [[ "$line" == "$path" ]] || \
-         [[ "$line_without_suffix" == "$path" ]]; then
-        if [ "$found" = "false" ]; then
-          found=true
-          matched_line="$line"
-        fi
-      else
-        echo "$line" >> "$temp_file"
-      fi
-    done < "$global_config"
-    
-    if [ "$found" = "true" ]; then
-      /bin/mv "$temp_file" "$global_config"
-      echo "✅ Removed from global config: $matched_line"
-      removed=true
-    else
-      /bin/rm -f "$temp_file"
-    fi
-  fi
-  
-  # Try to remove from local config - match both with and without suffix
-  if [ -f "$local_config" ]; then
-    local temp_file="${local_config}.tmp"
-    local found=false
-    local matched_line=""
-    
-    # Ensure temp file is empty
-    /usr/bin/true > "$temp_file"
-    
-    while IFS= read -r line || [ -n "$line" ]; do
-      # Skip empty lines
-      if [ -z "$line" ]; then
-        continue
-      fi
-      
-      local line_without_suffix="${line%:*}"
-      
-      # Match either exact path, path with any suffix, or normalized path
-      if [[ "$line" == "$normalized_path" ]] || \
-         [[ "$line_without_suffix" == "$normalized_path" ]] || \
-         [[ "$line" == "$path" ]] || \
-         [[ "$line_without_suffix" == "$path" ]]; then
-        if [ "$found" = "false" ]; then
-          found=true
-          matched_line="$line"
-        fi
-      else
-        echo "$line" >> "$temp_file"
-      fi
-    done < "$local_config"
-    
-    if [ "$found" = "true" ]; then
-      /bin/mv "$temp_file" "$local_config"
-      echo "✅ Removed from local config: $matched_line"
-      removed=true
-    else
-      /bin/rm -f "$temp_file"
-    fi
-  fi
-  
-  if [ "$removed" = "false" ]; then
-    echo "⚠️  Mount not found in any config: $path"
-    return 1
-  fi
-}
-
-# Helper function to save default image to config
-__copilot_save_image_config() {
-  local image_tag="$1"
-  local is_global="$2"
-  local config_file
-  
-  if [ "$is_global" = "true" ]; then
-    config_file="$HOME/.config/copilot_here/image.conf"
-    # Check if config file is a symlink and follow it
-    if [ -L "$config_file" ]; then
-      config_file=$(readlink -f "$config_file" 2>/dev/null || readlink "$config_file")
-    fi
-    /bin/mkdir -p "$(/usr/bin/dirname "$config_file")"
-    echo "✅ Saved default image to global config: $image_tag"
-  else
-    config_file=".copilot_here/image.conf"
-    # Check if config file is a symlink and follow it
-    if [ -L "$config_file" ]; then
-      config_file=$(readlink -f "$config_file" 2>/dev/null || readlink "$config_file")
-    fi
-    /bin/mkdir -p "$(/usr/bin/dirname "$config_file")"
-    echo "✅ Saved default image to local config: $image_tag"
-  fi
-  
-  echo "$image_tag" > "$config_file"
-  echo "   Config file: $config_file"
-}
-
-# Helper function to clear default image from config
-__copilot_clear_image_config() {
-  local is_global="$1"
-  local config_file
-  
-  if [ "$is_global" = "true" ]; then
-    config_file="$HOME/.config/copilot_here/image.conf"
-    # Check if config file is a symlink and follow it
-    if [ -L "$config_file" ]; then
-      config_file=$(readlink -f "$config_file" 2>/dev/null || readlink "$config_file")
-    fi
-    
-    if [ -f "$config_file" ]; then
-      rm "$config_file"
-      echo "✅ Cleared default image from global config"
-    else
-      echo "⚠️  No global image config found to clear"
-    fi
-  else
-    config_file=".copilot_here/image.conf"
-    # Check if config file is a symlink and follow it
-    if [ -L "$config_file" ]; then
-      config_file=$(readlink -f "$config_file" 2>/dev/null || readlink "$config_file")
-    fi
-    
-    if [ -f "$config_file" ]; then
-      rm "$config_file"
-      echo "✅ Cleared default image from local config"
-    else
-      echo "⚠️  No local image config found to clear"
-    fi
-  fi
-}
-
-# Helper function to get default image
-__copilot_get_default_image() {
-  local local_config=".copilot_here/image.conf"
-  local global_config="$HOME/.config/copilot_here/image.conf"
-  
-  # Check local config first
-  if [ -f "$local_config" ]; then
-    local image=$(head -n 1 "$local_config" | tr -d '[:space:]')
-    if [ -n "$image" ]; then
-      echo "$image"
-      return 0
-    fi
-  fi
-  
-  # Check global config
-  if [ -f "$global_config" ]; then
-    local image=$(head -n 1 "$global_config" | tr -d '[:space:]')
-    if [ -n "$image" ]; then
-      echo "$image"
-      return 0
-    fi
-  fi
-  
-  # Default
-  echo "latest"
-}
-
-# Helper function to list available images
-__copilot_list_images() {
-  echo "📦 Available Images:"
-  echo "  • latest (Base image)"
-  echo "  • dotnet (.NET 8, 9, 10 SDKs)"
-  echo "  • dotnet-8 (.NET 8 SDK)"
-  echo "  • dotnet-9 (.NET 9 SDK)"
-  echo "  • dotnet-10 (.NET 10 SDK)"
-  echo "  • dotnet-playwright (.NET + Playwright)"
-  echo "  • dotnet-sha-<sha> (Specific commit SHA)"
-}
-
-# Helper function to show default image
-__copilot_show_default_image() {
-  local local_config=".copilot_here/image.conf"
-  local global_config="$HOME/.config/copilot_here/image.conf"
-  local current_default=$(__copilot_get_default_image)
-  
-  echo "🖼️  Image Configuration:"
-  echo "  Current effective default: $current_default"
-  echo ""
-  
-  if [ -f "$local_config" ]; then
-    local local_img=$(head -n 1 "$local_config" | tr -d '[:space:]')
-    echo "  📍 Local config (.copilot_here/image.conf): $local_img"
-  else
-    echo "  📍 Local config: (not set)"
-  fi
-  
-  if [ -f "$global_config" ]; then
-    local global_img=$(head -n 1 "$global_config" | tr -d '[:space:]')
-    echo "  🌍 Global config (~/.config/copilot_here/image.conf): $global_img"
-  else
-    echo "  🌍 Global config: (not set)"
-  fi
-  
-  echo ""
-  echo "  🔧 Base default: latest"
-}
-
-# Helper function for security checks (shared by all variants)
-__copilot_security_check() {
-  # Skip in test mode
-  if [ "$COPILOT_HERE_TEST_MODE" = "true" ]; then
-    return 0
-  fi
-  
-  if ! gh auth status 2>/dev/null | /usr/bin/grep "Token scopes:" | /usr/bin/grep -q "'copilot'" || \
-     ! gh auth status 2>/dev/null | /usr/bin/grep "Token scopes:" | /usr/bin/grep -q "'read:packages'"; then
-    echo "❌ Error: Your gh token is missing the required 'copilot' or 'read:packages' scope."
-    echo "Please run 'gh auth refresh -h github.com -s copilot,read:packages' to add it."
-    return 1
-  fi
-
-  if gh auth status 2>/dev/null | /usr/bin/grep "Token scopes:" | /usr/bin/grep -q -E "'(admin:|manage_|write:public_key|delete_repo|(write|delete)_packages)'"; then
-    echo "⚠️  Warning: Your GitHub token has highly privileged scopes (e.g., admin:org, admin:enterprise)."
-    printf "Are you sure you want to proceed with this token? [y/N]: "
-    read confirmation
-    local lower_confirmation
-    lower_confirmation=$(echo "$confirmation" | tr '[:upper:]' '[:lower:]')
-    if [[ "$lower_confirmation" != "y" && "$lower_confirmation" != "yes" ]]; then
-      echo "Operation cancelled by user."
-      return 1
-    fi
+    echo "✅ Binary updated!"
+    echo ""
+    echo "⚠️  Could not auto-reload shell functions. Please re-source manually:"
+    echo "   source <(curl -fsSL ${COPILOT_HERE_RELEASE_URL}/copilot_here.sh)"
+    echo ""
+    echo "   Or restart your terminal."
   fi
   return 0
 }
 
-# Helper function to cleanup unused copilot_here images
-__copilot_cleanup_images() {
-  local keep_image="$1"
-  echo "🧹 Cleaning up old copilot_here images (older than 7 days)..."
+# Helper function to update a profile file with marker blocks
+__copilot_update_profile() {
+  local profile_path="$1"
+  local profile_name="$2"
+  local script_path="$HOME/.copilot_here.sh"
   
-  # Get cutoff timestamp (7 days ago)
-  local cutoff_date=$(date -d '7 days ago' +%s 2>/dev/null || date -v-7d +%s 2>/dev/null)
-  
-  # Resolve the ID of the image we want to keep to ensure we don't delete it
-  local keep_image_id=$(docker inspect --format="{{.Id}}" "$keep_image" 2>/dev/null || echo "")
-  
-  # Get all copilot_here images by repository name with full IDs
-  local all_images=$(docker images --no-trunc "ghcr.io/gordonbeeming/copilot_here" --format "{{.ID}}|{{.Repository}}:{{.Tag}}|{{.CreatedAt}}" || true)
-  
-  if [ -z "$all_images" ]; then
-    echo "  ✓ No images to clean up"
-    return 0
+  # Create profile if it doesn't exist
+  if [ ! -f "$profile_path" ]; then
+    touch "$profile_path"
   fi
   
-  local count=0
-  while IFS='|' read -r cleanup_image_id cleanup_image_name cleanup_created_at; do
-    # Check if this is the image we want to keep (by ID)
-    if [ -n "$cleanup_image_id" ] && [ "$cleanup_image_id" != "$keep_image_id" ]; then
-      # Parse creation date (format: "2025-01-28 12:34:56 +0000 UTC")
-      local image_date=$(date -d "$cleanup_created_at" +%s 2>/dev/null || date -j -f "%Y-%m-%d %H:%M:%S %z %Z" "$cleanup_created_at" +%s 2>/dev/null)
-      
-      if [ -n "$image_date" ] && [ "$image_date" -lt "$cutoff_date" ]; then
-        echo "  🗑️  Removing old image: $cleanup_image_name (ID: ${cleanup_image_id:7:12}...) (created: ${cleanup_created_at})"
-        if docker rmi -f "$cleanup_image_id" > /dev/null 2>&1; then
-          ((count++))
-        else
-          echo "  ⚠️  Failed to remove: $cleanup_image_name (may be in use by running container)"
-        fi
-      fi
-    fi
-  done <<< "$all_images"
+  local marker_start="# >>> copilot_here >>>"
+  local marker_end="# <<< copilot_here <<<"
+  local temp_file
+  temp_file=$(mktemp)
   
-  if [ "$count" -eq 0 ]; then
-    echo "  ✓ No old images to clean up"
+  # Check if marker block exists
+  if grep -qF "$marker_start" "$profile_path" 2>/dev/null; then
+    # Remove the entire marker block and rebuild fresh
+    awk -v start="$marker_start" -v end="$marker_end" '
+      BEGIN { in_block=0 }
+      $0 ~ start { in_block=1; next }
+      $0 ~ end { in_block=0; next }
+      !in_block && $0 !~ /copilot_here\.sh/ { print }
+    ' "$profile_path" > "$temp_file"
   else
-    echo "  ✓ Cleaned up $count old image(s)"
+    # No markers - remove rogue entries
+    grep -v "copilot_here.sh" "$profile_path" > "$temp_file" 2>/dev/null || cat "$profile_path" > "$temp_file" 2>/dev/null || true
   fi
+  
+  # Add fresh marker block
+  cat >> "$temp_file" << EOF
+
+$marker_start
+if [ -f "$script_path" ]; then
+  source "$script_path"
+fi
+$marker_end
+EOF
+  
+  mv "$temp_file" "$profile_path"
+  echo "   ✓ $profile_name"
 }
 
-# Helper function to pull image with spinner (shared by all variants)
-__copilot_pull_image() {
-  local image_name="$1"
-  printf "📥 Pulling latest image: ${image_name}... "
-  
-  (docker pull "$image_name" > /dev/null 2>&1) &
-  local pull_pid=$!
-  local spin='|/-\'
-  
-  local i=0
-  while ps -p $pull_pid > /dev/null; do
-    i=$(( (i+1) % 4 ))
-    printf "%s\b" "${spin:$i:1}"
-    sleep 0.1
-  done
-
-  wait $pull_pid
-  local pull_status=$?
-  
-  if [ $pull_status -eq 0 ]; then
-    echo "✅"
-    return 0
-  else
-    echo "❌"
-    echo "Error: Failed to pull the Docker image. Please check your Docker setup and network."
-    return 1
-  fi
+# Reset function - same as update (kept for backwards compatibility)
+__copilot_reset() {
+  __copilot_update
 }
 
-# Core function to run copilot (shared by all variants)
-__copilot_run() {
-  local image_tag="$1"
-  local allow_all_tools="$2"
-  local skip_cleanup="$3"
-  local skip_pull="$4"
-  local mounts_ro_name="$5"
-  local mounts_rw_name="$6"
-  shift 6
-  
-  __copilot_security_check || return 1
-  
-  local image_name="ghcr.io/gordonbeeming/copilot_here:${image_tag}"
-  
-  echo "🚀 Using image: ${image_name}"
-  
-  # Pull latest image unless skipped
-  if [ "$skip_pull" != "true" ]; then
-    __copilot_pull_image "$image_name" || return 1
-  else
-    echo "⏭️  Skipping image pull"
-  fi
-  
-  # Cleanup old images unless skipped
-  if [ "$skip_cleanup" != "true" ]; then
-    __copilot_cleanup_images "$image_name"
-  else
-    echo "⏭️  Skipping image cleanup"
-  fi
-
-  local copilot_config_path="$HOME/.config/copilot-cli-docker"
-  /bin/mkdir -p "$copilot_config_path"
-
-  local token=$(gh auth token 2>/dev/null)
-  if [ -z "$token" ]; then
-    echo "⚠️  Could not retrieve token using 'gh auth token'. Please ensure you are logged in."
-  fi
-
-  local current_dir="$(pwd)"
-  
-  # Determine container path for current directory - map to container home if needed
-  local container_work_dir="$current_dir"
-  if [[ "$current_dir" == "$HOME"* ]]; then
-    # Path is under user's home directory - map to container's home
-    local relative_path="${current_dir#$HOME}"
-    container_work_dir="/home/appuser${relative_path}"
-  fi
-  
-
-  local docker_args=(
-    --rm -it
-    -v "$current_dir:$container_work_dir"
-    -w "$container_work_dir"
-    -v "$copilot_config_path":/home/appuser/.copilot
-    -e PUID=$(id -u)
-    -e PGID=$(id -g)
-    -e GITHUB_TOKEN="$token"
-  )
-
-  # Load mounts from config files
-  local global_config="$HOME/.config/copilot_here/mounts.conf"
-  local local_config=".copilot_here/mounts.conf"
-  local global_mounts=()
-  local local_mounts=()
-  
-  __copilot_load_mounts "$global_config" global_mounts
-  __copilot_load_mounts "$local_config" local_mounts
-  
-  # Track all mounted paths for display and --add-dir
-  local all_mount_paths=()
-  local mount_display=()
-  
-  # Add current working directory to display
-  mount_display+=("📁 $container_work_dir")
-  
-  # Process global config mounts
-  # Initialize seen_paths with current directory to avoid duplicates
-  local seen_paths=("$current_dir")
-  for mount in "${global_mounts[@]}"; do
-    local mount_path="${mount%:*}"
-    local mount_mode="${mount##*:}"
-    
-    # If no mode specified, default to ro
-    if [ "$mount_path" = "$mount_mode" ]; then
-      mount_mode="ro"
-    fi
-    
-    local resolved_path=$(__copilot_resolve_mount_path "$mount_path")
-    if [ $? -ne 0 ]; then
-      continue  # Skip this mount if user cancelled
-    fi
-    
-    # Skip if already seen (dedup)
-    if [[ " ${seen_paths[@]} " =~ " ${resolved_path} " ]]; then
-      continue
-    fi
-    seen_paths+=("$resolved_path")
-    
-    # Determine container path - if under home directory, map to container home
-    local container_path="$resolved_path"
-    if [[ "$resolved_path" == "$HOME"* ]]; then
-      # Path is under user's home directory - map to container's home
-      local relative_path="${resolved_path#$HOME}"
-      container_path="/home/appuser${relative_path}"
-    fi
-    
-    docker_args+=(-v "$resolved_path:$container_path:$mount_mode")
-    all_mount_paths+=("$container_path")
-    
-    # Global mount icon
-    if __copilot_supports_emoji; then
-      mount_display+=("   🌍 $container_path ($mount_mode)")
-    else
-      mount_display+=("   G: $container_path ($mount_mode)")
-    fi
-  done
-  
-  # Process local config mounts
-  for mount in "${local_mounts[@]}"; do
-    local mount_path="${mount%:*}"
-    local mount_mode="${mount##*:}"
-    
-    # If no mode specified, default to ro
-    if [ "$mount_path" = "$mount_mode" ]; then
-      mount_mode="ro"
-    fi
-    
-    local resolved_path=$(__copilot_resolve_mount_path "$mount_path")
-    if [ $? -ne 0 ]; then
-      continue  # Skip this mount if user cancelled
-    fi
-    
-    # Skip if already seen (dedup)
-    if [[ " ${seen_paths[@]} " =~ " ${resolved_path} " ]]; then
-      continue
-    fi
-    seen_paths+=("$resolved_path")
-    
-    # Determine container path - if under home directory, map to container home
-    local container_path="$resolved_path"
-    if [[ "$resolved_path" == "$HOME"* ]]; then
-      # Path is under user's home directory - map to container's home
-      local relative_path="${resolved_path#$HOME}"
-      container_path="/home/appuser${relative_path}"
-    fi
-    
-    docker_args+=(-v "$resolved_path:$container_path:$mount_mode")
-    all_mount_paths+=("$container_path")
-    
-    # Local mount icon
-    if __copilot_supports_emoji; then
-      mount_display+=("   📍 $container_path ($mount_mode)")
-    else
-      mount_display+=("   L: $container_path ($mount_mode)")
-    fi
-  done
-  
-  # Process CLI read-only mounts
-  eval "local mounts_ro_array=(\"\${${mounts_ro_name}[@]}\")"
-  for mount_path in "${mounts_ro_array[@]}"; do
-    local resolved_path=$(__copilot_resolve_mount_path "$mount_path")
-    if [ $? -ne 0 ]; then
-      continue  # Skip this mount if user cancelled
-    fi
-    
-    # Skip if already seen
-    if [[ " ${seen_paths[@]} " =~ " ${resolved_path} " ]]; then
-      continue
-    fi
-    seen_paths+=("$resolved_path")
-    
-    # Determine container path - if under home directory, map to container home
-    local container_path="$resolved_path"
-    if [[ "$resolved_path" == "$HOME"* ]]; then
-      local relative_path="${resolved_path#$HOME}"
-      container_path="/home/appuser${relative_path}"
-    fi
-    
-    docker_args+=(-v "$resolved_path:$container_path:ro")
-    all_mount_paths+=("$container_path")
-    
-    if __copilot_supports_emoji; then
-      mount_display+=("   🔧 $container_path (ro)")
-    else
-      mount_display+=("   CLI: $container_path (ro)")
-    fi
-  done
-  
-  # Process CLI read-write mounts
-  eval "local mounts_rw_array=(\"\${${mounts_rw_name}[@]}\")"
-  for mount_path in "${mounts_rw_array[@]}"; do
-    local resolved_path=$(__copilot_resolve_mount_path "$mount_path")
-    if [ $? -ne 0 ]; then
-      continue  # Skip this mount if user cancelled
-    fi
-    
-    # Determine container path - if under home directory, map to container home
-    local container_path="$resolved_path"
-    if [[ "$resolved_path" == "$HOME"* ]]; then
-      local relative_path="${resolved_path#$HOME}"
-      container_path="/home/appuser${relative_path}"
-    fi
-    
-    # Skip if already seen (CLI overrides config)
-    local override=false
-    for seen_path in "${seen_paths[@]}"; do
-      if [ "$seen_path" = "$resolved_path" ]; then
-        # Replace read-only with read-write
-        override=true
-        # Update docker args to rw - rebuild array to avoid bash-specific array indexing
-        local new_docker_args=()
-        local skip_next=false
-        local prev_arg=""
-        for arg in "${docker_args[@]}"; do
-          if [ "$skip_next" = "true" ]; then
-            skip_next=false
-            continue
-          fi
-          
-          if [ "$prev_arg" = "-v" ] && [ "$arg" = "$resolved_path:$container_path:ro" ]; then
-            # Replace this mount with rw version
-            new_docker_args+=("$resolved_path:$container_path:rw")
-          else
-            new_docker_args+=("$arg")
-          fi
-          prev_arg="$arg"
-        done
-        docker_args=("${new_docker_args[@]}")
-        break
-      fi
-    done
-    
-    if [ "$override" = "false" ]; then
-      seen_paths+=("$resolved_path")
-      docker_args+=(-v "$resolved_path:$container_path:rw")
-      all_mount_paths+=("$container_path")
-    fi
-    
-    if __copilot_supports_emoji; then
-      mount_display+=("   🔧 $container_path (rw)")
-    else
-      mount_display+=("   CLI: $container_path (rw)")
-    fi
-  done
-  
-  # Display mounts if there are extras
-  if [ ${#all_mount_paths[@]} -gt 0 ]; then
-    echo "📂 Mounts:"
-    for display in "${mount_display[@]}"; do
-      echo "$display"
-    done
-  fi
-  
-  docker_args+=("$image_name")
-
-  local copilot_args=("copilot")
-  
-  # Add --allow-all-tools and --allow-all-paths if in YOLO mode
-  if [ "$allow_all_tools" = "true" ]; then
-    copilot_args+=("--allow-all-tools" "--allow-all-paths")
-    # In YOLO mode, also add current dir and mounts to avoid any prompts
-    copilot_args+=("--add-dir" "$container_work_dir")
-    for mount_path in "${all_mount_paths[@]}"; do
-      copilot_args+=("--add-dir" "$mount_path")
-    done
-  fi
-  # In Safe Mode, don't auto-add directories - let Copilot CLI ask for permission
-  
-  # If no arguments provided, start interactive mode with banner
-  if [ $# -eq 0 ]; then
-    copilot_args+=("--banner")
-  else
-    # Pass all arguments directly to copilot for maximum flexibility
-    copilot_args+=("$@")
-  fi
-
-  # Wrap in subshell to safely use trap for title reset
-  (
-    # Set terminal title
-    local title_emoji="🤖"
-    if [ "$allow_all_tools" = "true" ]; then
-      title_emoji="🤖⚡️"
-    fi
-    
-    local current_dir_name=$(basename "$current_dir")
-    local title="${title_emoji} ${current_dir_name}"
-    
-    printf "\033]0;%s\007" "$title"
-    trap 'printf "\033]0;\007"' EXIT
-    
-    docker run "${docker_args[@]}" "${copilot_args[@]}"
-  )
-}
-
-# Helper function to update scripts
-__copilot_update_scripts() {
-  echo "📦 Updating copilot_here scripts from GitHub..."
-  
-  # Get current version
-  local current_version=""
-  if [ -f ~/.copilot_here.sh ]; then
-    current_version=$(sed -n '2s/# Version: //p' ~/.copilot_here.sh 2>/dev/null)
-  elif type copilot_here >/dev/null 2>&1; then
-    current_version=$(type copilot_here | /usr/bin/grep "# Version:" | head -1 | sed 's/.*# Version: //')
-  fi
-  
-  # Check if using standalone file installation
-  if [ -f ~/.copilot_here.sh ]; then
-    echo "✅ Detected standalone installation at ~/.copilot_here.sh"
-    
-    # Check if it's a symlink
-    local target_file=~/.copilot_here.sh
-    if [ -L ~/.copilot_here.sh ]; then
-      target_file=$(readlink -f ~/.copilot_here.sh)
-      echo "🔗 Symlink detected, updating target: $target_file"
-    fi
-    
-    # Download to temp first to check version
-    local temp_script=$(mktemp)
-    if ! curl -fsSL "https://raw.githubusercontent.com/GordonBeeming/copilot_here/main/copilot_here.sh" -o "$temp_script"; then
-      echo "❌ Failed to download script"
-      rm -f "$temp_script"
-      return 1
-    fi
-    
-    local new_version=$(sed -n '2s/# Version: //p' "$temp_script" 2>/dev/null)
-    
-    if [ -n "$current_version" ] && [ -n "$new_version" ]; then
-      echo "📌 Version: $current_version → $new_version"
-    fi
-    
-    # Update the actual file (following symlinks)
-    mv "$temp_script" "$target_file"
-    echo "✅ Scripts updated successfully!"
-    echo "🔄 Reloading..."
-    source ~/.copilot_here.sh
-    echo "✨ Update complete! You're now on version $new_version"
-    return 0
-  fi
-  
-  # Inline installation - update shell config
-  local config_file=""
-  if [ -n "$ZSH_VERSION" ]; then
-    config_file="${ZDOTDIR:-$HOME}/.zshrc"
-  elif [ -n "$BASH_VERSION" ]; then
-    config_file="$HOME/.bashrc"
-  else
-    echo "❌ Unsupported shell. Please update manually."
-    return 1
-  fi
-  
-  if [ ! -f "$config_file" ]; then
-    echo "❌ Shell config not found: $config_file"
-    return 1
-  fi
-  
-  # Download latest
-  local temp_script=$(mktemp)
-  if ! curl -fsSL "https://raw.githubusercontent.com/GordonBeeming/copilot_here/main/copilot_here.sh" -o "$temp_script"; then
-    echo "❌ Failed to download script"
-    rm -f "$temp_script"
-    return 1
-  fi
-  
-  local new_version=$(sed -n '2s/# Version: //p' "$temp_script" 2>/dev/null)
-  
-  if [ -n "$current_version" ] && [ -n "$new_version" ]; then
-    echo "📌 Version: $current_version → $new_version"
-  fi
-  
-  # Backup
-  cp "$config_file" "${config_file}.backup.$(date +%Y%m%d_%H%M%S)"
-  echo "✅ Created backup"
-  
-  # Replace script
-  if /usr/bin/grep -q "# copilot_here shell functions" "$config_file"; then
-    awk '/# copilot_here shell functions/,/^}$/ {next} {print}' "$config_file" > "${config_file}.tmp"
-    cat "$temp_script" >> "${config_file}.tmp"
-    mv "${config_file}.tmp" "$config_file"
-    echo "✅ Scripts updated!"
-  else
-    echo "" >> "$config_file"
-    cat "$temp_script" >> "$config_file"
-    echo "✅ Scripts added!"
-  fi
-  
-  rm -f "$temp_script"
-  echo "🔄 Reloading..."
-  source "$config_file"
-  echo "✨ Update complete! You're now on version $new_version"
-  return 0
-}
-
-# Helper function to check for updates
+# Check for updates (called at startup)
 __copilot_check_for_updates() {
-  # Skip in test mode
-  if [ "$COPILOT_HERE_TEST_MODE" = "true" ]; then
-    return 0
-  fi
-
-  # Get current version
-  local current_version=""
-  if [ -f ~/.copilot_here.sh ]; then
-    current_version=$(sed -n '2s/# Version: //p' ~/.copilot_here.sh 2>/dev/null)
-  elif type copilot_here >/dev/null 2>&1; then
-    current_version=$(type copilot_here | /usr/bin/grep "# Version:" | head -1 | sed 's/.*# Version: //')
+  __copilot_debug "Checking for updates..."
+  
+  # Fetch remote version with 2 second timeout
+  local remote_version
+  remote_version=$(curl -m 2 -fsSL "${COPILOT_HERE_RELEASE_URL}/copilot_here.sh" 2>/dev/null | sed -n 's/^COPILOT_HERE_VERSION="\(.*\)"$/\1/p')
+  
+  if [ -z "$remote_version" ]; then
+    __copilot_debug "Could not fetch remote version (offline or timeout)"
+    return 0  # Failed to check or offline - continue normally
   fi
   
-  if [ -z "$current_version" ]; then
-    return 0
-  fi
-
-  # Fetch remote version (with timeout)
-  local remote_version=$(curl -m 2 -fsSL "https://raw.githubusercontent.com/GordonBeeming/copilot_here/main/copilot_here.sh" 2>/dev/null | sed -n '2s/# Version: //p')
-
-  if [ -z "$remote_version" ]; then
-    return 0 # Failed to check or offline
-  fi
-
-  if [ "$current_version" != "$remote_version" ]; then
-     # Check if remote is actually newer using sort -V
-     local newest=$(printf "%s\n%s" "$current_version" "$remote_version" | sort -V | tail -n1)
-     if [ "$newest" = "$remote_version" ]; then
-        echo "📢 Update available: $current_version → $remote_version"
-        printf "Would you like to update now? [y/N]: "
-        read confirmation
-        local lower_confirmation=$(echo "$confirmation" | tr '[:upper:]' '[:lower:]')
-        if [[ "$lower_confirmation" == "y" || "$lower_confirmation" == "yes" ]]; then
-           __copilot_update_scripts
-           return 1 # Updated
-        fi
-     fi
+  __copilot_debug "Local version: $COPILOT_HERE_VERSION, Remote version: $remote_version"
+  
+  if [ "$COPILOT_HERE_VERSION" != "$remote_version" ]; then
+    # Check if remote is actually newer using sort -V
+    local newest
+    newest=$(printf "%s\n%s" "$COPILOT_HERE_VERSION" "$remote_version" | sort -V | tail -n1)
+    if [ "$newest" = "$remote_version" ]; then
+      echo "📢 Update available: $COPILOT_HERE_VERSION → $remote_version"
+      printf "Would you like to update now? [y/N]: "
+      read -r confirmation
+      local lower_confirmation
+      lower_confirmation=$(echo "$confirmation" | tr '[:upper:]' '[:lower:]')
+      if [ "$lower_confirmation" = "y" ] || [ "$lower_confirmation" = "yes" ]; then
+        __copilot_update
+        return 1  # Signal that update was performed
+      fi
+    fi
   fi
   return 0
+}
+
+# Check if argument is an update command
+__copilot_is_update_arg() {
+  case "$1" in
+    --update|-u|--upgrade|--update-scripts|--upgrade-scripts)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+# Check if argument is a reset command
+__copilot_is_reset_arg() {
+  case "$1" in
+    --reset)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
 }
 
 # Safe Mode: Asks for confirmation before executing
 copilot_here() {
-  local image_tag=$(__copilot_get_default_image)
-  local skip_cleanup="false"
-  local skip_pull="false"
-  local args=()
-  local mounts_ro=()
-  local mounts_rw=()
+  __copilot_debug "=== copilot_here called with args: $*"
   
-  # Parse arguments for image variant and control flags
-  while [[ $# -gt 0 ]]; do
-    case "$1" in
-     -h|--help)
-       cat << 'EOF'
-================================================================================
-COPILOT_HERE WRAPPER - HELP
-================================================================================
-copilot_here - GitHub Copilot CLI in a secure Docker container (Safe Mode)
-
-USAGE:
-  copilot_here [OPTIONS] [COPILOT_ARGS]
-  copilot_here [MOUNT_MANAGEMENT]
-  copilot_here [IMAGE_MANAGEMENT]
-
-OPTIONS:
-  -d, --dotnet              Use .NET image variant (all versions)
-  -d8, --dotnet8            Use .NET 8 image variant
-  -d9, --dotnet9            Use .NET 9 image variant
-  -d10, --dotnet10          Use .NET 10 image variant
-  -dp, --dotnet-playwright  Use .NET + Playwright image variant
-  --mount <path>            Mount additional directory (read-only)
-  --mount-rw <path>         Mount additional directory (read-write)
-  --no-cleanup              Skip cleanup of unused Docker images
-  --no-pull                 Skip pulling the latest image
-  --update-scripts          Update scripts from GitHub repository
-  --upgrade-scripts         Alias for --update-scripts
-  -h, --help                Show this help message
-
-MOUNT MANAGEMENT:
-  --list-mounts             Show all configured mounts
-  --save-mount <path>       Save mount to local config (.copilot_here/mounts.conf)
-  --save-mount-global <path>  Save mount to global config (~/.config/copilot_here/mounts.conf)
-  --remove-mount <path>     Remove mount from configs
+  # Check if script file version differs from in-memory version
+  local script_path="$HOME/.copilot_here.sh"
+  if [ -f "$script_path" ]; then
+    local file_version
+    file_version=$(grep '^COPILOT_HERE_VERSION=' "$script_path" 2>/dev/null | sed -n 's/^COPILOT_HERE_VERSION="\(.*\)"$/\1/p')
+    if [ -n "$file_version" ] && __copilot_version_is_newer "$file_version" "$COPILOT_HERE_VERSION"; then
+      __copilot_debug "Newer on-disk script detected: in-memory=$COPILOT_HERE_VERSION, file=$file_version"
+      echo "🔄 Detected updated shell script (v$file_version), reloading..."
+      source "$script_path"
+      copilot_here "$@"
+      return $?
+    fi
+  fi
   
-  Note: Saved mounts are read-only by default. To save as read-write, add :rw suffix:
- copilot_here --save-mount ~/notes:rw
- copilot_here --save-mount-global ~/data:rw
-
-IMAGE MANAGEMENT:
-  --list-images     List all available Docker images
-  --show-image      Show current default image configuration
-  --set-image <tag> Set default image in local config
-  --set-image-global <tag> Set default image in global config
-  --clear-image     Clear default image from local config
-  --clear-image-global Clear default image from global config
-
-MOUNT CONFIG:
-  Mounts can be configured in three ways (priority: CLI > Local > Global):
- 1. Global: ~/.config/copilot_here/mounts.conf
- 2. Local:  .copilot_here/mounts.conf
- 3. CLI:    --mount and --mount-rw flags
-  
-  Config file format (one path per line):
- ~/investigations:ro
- ~/notes:rw
- /data/research
-
-COPILOT_ARGS:
-  All standard GitHub Copilot CLI arguments are supported:
- -p, --prompt <text>     Execute a prompt directly
- --model <model>         Set AI model (claude-sonnet-4.5, gpt-5, etc.)
- --continue              Resume most recent session
- --resume [sessionId]    Resume from a previous session
- --log-level <level>     Set log level (none, error, warning, info, debug)
- --add-dir <directory>   Add directory to allowed list
- --allow-tool <tools>    Allow specific tools
- --deny-tool <tools>     Deny specific tools
- ... and more (see GitHub Copilot CLI help below)
-
-EXAMPLES:
-  # Interactive mode
-  copilot_here
-  
-  # Mount additional directories
-  copilot_here --mount ../investigations -p "analyze these files"
-  copilot_here --mount-rw ~/notes --mount /data/research
-  
-  # Save mounts for reuse
-  copilot_here --save-mount ~/investigations
-  copilot_here --save-mount-global ~/common-data
-  copilot_here --list-mounts
-  
-  # Set default image
-  copilot_here --set-image dotnet
-  copilot_here --set-image-global dotnet-sha-bf08e6c875a919cd3440e8b3ebefc5d460edd870
-  
-  # Ask a question (short syntax)
-  copilot_here -p "how do I list files in bash?"
-  
-  # Use specific AI model
-  copilot_here --model gpt-5 -p "explain this code"
-  
-  # Resume previous session
-  copilot_here --continue
-  
-  # Use .NET image with custom log level
-  copilot_here -d --log-level debug -p "build this .NET project"
-  
-  # Use .NET 9 image
-  copilot_here -d9 -p "build this .NET 9 project"
-  
-  # Fast mode (skip cleanup and pull)
-  copilot_here --no-cleanup --no-pull -p "quick question"
-
-MODES:
-  copilot_here  - Safe mode (asks for confirmation before executing)
-  copilot_yolo  - YOLO mode (auto-approves all tool usage + all paths)
-
-VERSION: 2025-11-20.12
-REPOSITORY: https://github.com/GordonBeeming/copilot_here
-
-================================================================================
-GITHUB COPILOT CLI - NATIVE HELP
-================================================================================
-EOF
-       # Run copilot --help to show native help
-       local empty_mounts_ro=()
-       local empty_mounts_rw=()
-       __copilot_run "$image_tag" "false" "true" "true" empty_mounts_ro empty_mounts_rw "--help"
-       return 0
-       ;;
-     --list-mounts)
-       __copilot_list_mounts
-       return 0
-       ;;
-     --save-mount)
-       shift
-       if [ -z "$1" ]; then
-         echo "❌ Error: --save-mount requires a path argument"
-         return 1
-       fi
-       __copilot_save_mount "$1" "false"
-       return 0
-       ;;
-     --save-mount-global)
-       shift
-       if [ -z "$1" ]; then
-         echo "❌ Error: --save-mount-global requires a path argument"
-         return 1
-       fi
-       __copilot_save_mount "$1" "true"
-       return 0
-       ;;
-     --remove-mount)
-       shift
-       if [ -z "$1" ]; then
-         echo "❌ Error: --remove-mount requires a path argument"
-         return 1
-       fi
-       __copilot_remove_mount "$1"
-       return 0
-       ;;
-     --list-images)
-       __copilot_list_images
-       return 0
-       ;;
-     --show-image)
-       __copilot_show_default_image
-       return 0
-       ;;
-     --set-image)
-       shift
-       if [ -z "$1" ]; then
-         echo "❌ Error: --set-image requires an image tag argument"
-         return 1
-       fi
-       __copilot_save_image_config "$1" "false"
-       return 0
-       ;;
-     --set-image-global)
-       shift
-       if [ -z "$1" ]; then
-         echo "❌ Error: --set-image-global requires an image tag argument"
-         return 1
-       fi
-       __copilot_save_image_config "$1" "true"
-       return 0
-       ;;
-     --mount)
-       shift
-       if [ -z "$1" ]; then
-         echo "❌ Error: --mount requires a path argument"
-         return 1
-       fi
-       mounts_ro+=("$1")
-       shift
-       ;;
-     --mount-rw)
-       shift
-       if [ -z "$1" ]; then
-         echo "❌ Error: --mount-rw requires a path argument"
-         return 1
-       fi
-       mounts_rw+=("$1")
-       shift
-       ;;
-      -d|--dotnet)
-        image_tag="dotnet"
-        shift
-        ;;
-      -d8|--dotnet8)
-        image_tag="dotnet-8"
-        shift
-        ;;
-      -d9|--dotnet9)
-        image_tag="dotnet-9"
-        shift
-        ;;
-      -d10|--dotnet10)
-        image_tag="dotnet-10"
-        shift
-        ;;
-      -dp|--dotnet-playwright)
-        image_tag="dotnet-playwright"
-        shift
-        ;;
-      --no-cleanup)
-        skip_cleanup="true"
-        shift
-        ;;
-      --no-pull)
-        skip_pull="true"
-        shift
-        ;;
-      --update-scripts|--upgrade-scripts)
-        __copilot_update_scripts
-        return $?
-        ;;
-      *)
-        args+=("$1")
-        shift
-        ;;
-    esac
+  # Handle --update and variants before binary check
+  local arg
+  for arg in "$@"; do
+    if __copilot_is_update_arg "$arg"; then
+      __copilot_debug "Update argument detected"
+      __copilot_update
+      return $?
+    fi
   done
   
+  # Handle --reset before binary check
+  for arg in "$@"; do
+    if __copilot_is_reset_arg "$arg"; then
+      __copilot_debug "Reset argument detected"
+      __copilot_reset
+      return $?
+    fi
+  done
+  
+  # Check for updates at startup
+  __copilot_debug "Checking for updates..."
   __copilot_check_for_updates || return 0
   
-  __copilot_run "$image_tag" "false" "$skip_cleanup" "$skip_pull" mounts_ro mounts_rw "${args[@]}"
+  __copilot_debug "Ensuring binary is installed..."
+  __copilot_ensure_binary || return 1
+  
+  __copilot_debug "Executing binary: $COPILOT_HERE_BIN $*"
+  "$COPILOT_HERE_BIN" "$@"
+  local exit_code=$?
+  __copilot_debug "Binary exited with code: $exit_code"
+  return $exit_code
 }
 
 # YOLO Mode: Auto-approves all tool usage
 copilot_yolo() {
-  local image_tag=$(__copilot_get_default_image)
-  local skip_cleanup="false"
-  local skip_pull="false"
-  local args=()
-  local mounts_ro=()
-  local mounts_rw=()
+  __copilot_debug "=== copilot_yolo called with args: $*"
   
-  # Parse arguments for image variant and control flags
-  while [[ $# -gt 0 ]]; do
-    case "$1" in
-     -h|--help)
-       cat << 'EOF'
-================================================================================
-COPILOT_YOLO WRAPPER - HELP
-================================================================================
-copilot_yolo - GitHub Copilot CLI in a secure Docker container (YOLO Mode)
-
-USAGE:
-  copilot_yolo [OPTIONS] [COPILOT_ARGS]
-  copilot_yolo [MOUNT_MANAGEMENT]
-  copilot_yolo [IMAGE_MANAGEMENT]
-
-OPTIONS:
-  -d, --dotnet              Use .NET image variant (all versions)
-  -d8, --dotnet8            Use .NET 8 image variant
-  -d9, --dotnet9            Use .NET 9 image variant
-  -d10, --dotnet10          Use .NET 10 image variant
-  -dp, --dotnet-playwright  Use .NET + Playwright image variant
-  --mount <path>            Mount additional directory (read-only)
-  --mount-rw <path>         Mount additional directory (read-write)
-  --no-cleanup              Skip cleanup of unused Docker images
-  --no-pull                 Skip pulling the latest image
-  --update-scripts          Update scripts from GitHub repository
-  --upgrade-scripts         Alias for --update-scripts
-  -h, --help                Show this help message
-
-MOUNT MANAGEMENT:
-  --list-mounts             Show all configured mounts
-  --save-mount <path>       Save mount to local config (.copilot_here/mounts.conf)
-  --save-mount-global <path>  Save mount to global config (~/.config/copilot_here/mounts.conf)
-  --remove-mount <path>     Remove mount from configs
+  # Check if script file version differs from in-memory version
+  local script_path="$HOME/.copilot_here.sh"
+  if [ -f "$script_path" ]; then
+    local file_version
+    file_version=$(grep '^COPILOT_HERE_VERSION=' "$script_path" 2>/dev/null | sed -n 's/^COPILOT_HERE_VERSION="\(.*\)"$/\1/p')
+    if [ -n "$file_version" ] && __copilot_version_is_newer "$file_version" "$COPILOT_HERE_VERSION"; then
+      __copilot_debug "Newer on-disk script detected: in-memory=$COPILOT_HERE_VERSION, file=$file_version"
+      echo "🔄 Detected updated shell script (v$file_version), reloading..."
+      source "$script_path"
+      copilot_yolo "$@"
+      return $?
+    fi
+  fi
   
-  Note: Saved mounts are read-only by default. To save as read-write, add :rw suffix:
- copilot_yolo --save-mount ~/notes:rw
- copilot_yolo --save-mount-global ~/data:rw
-
-IMAGE MANAGEMENT:
-  --list-images     List all available Docker images
-  --show-image      Show current default image configuration
-  --set-image <tag> Set default image in local config
-  --set-image-global <tag> Set default image in global config
-  --clear-image     Clear default image from local config
-  --clear-image-global Clear default image from global config
-
-COPILOT_ARGS:
-  All standard GitHub Copilot CLI arguments are supported:
- -p, --prompt <text>     Execute a prompt directly
- --model <model>         Set AI model (claude-sonnet-4.5, gpt-5, etc.)
- --continue              Resume most recent session
- --resume [sessionId]    Resume from a previous session
- --log-level <level>     Set log level (none, error, warning, info, debug)
- --add-dir <directory>   Add directory to allowed list
- --allow-tool <tools>    Allow specific tools
- --deny-tool <tools>     Deny specific tools
- ... and more (see GitHub Copilot CLI help below)
-
-EXAMPLES:
-  # Interactive mode (auto-approves all)
-  copilot_yolo
-  
-  # Execute without confirmation
-  copilot_yolo -p "run the tests and fix failures"
-  
-  # Mount additional directories
-  copilot_yolo --mount ../data -p "analyze all data"
-  
-  # Use specific model
-  copilot_yolo --model gpt-5 -p "optimize this code"
-  
-  # Resume session
-  copilot_yolo --continue
-  
-  # Use .NET + Playwright image
-  copilot_yolo -dp -p "write playwright tests"
-  
-  # Use .NET 10 image
-  copilot_yolo -d10 -p "explore .NET 10 features"
-  
-  # Fast mode (skip cleanup)
-  copilot_yolo --no-cleanup -p "generate README"
-
-WARNING:
-  YOLO mode automatically approves ALL tool usage without confirmation AND
-  disables file path verification (--allow-all-tools + --allow-all-paths).
-  Use with caution and only in trusted environments.
-
-MODES:
-  copilot_here  - Safe mode (asks for confirmation before executing)
-  copilot_yolo  - YOLO mode (auto-approves all tool usage + all paths)
-
-VERSION: 2025-11-20.12
-REPOSITORY: https://github.com/GordonBeeming/copilot_here
-
-================================================================================
-GITHUB COPILOT CLI - NATIVE HELP
-================================================================================
-EOF
-       # Run copilot --help to show native help
-       local empty_mounts_ro=()
-       local empty_mounts_rw=()
-       __copilot_run "$image_tag" "true" "true" "true" empty_mounts_ro empty_mounts_rw "--help"
-       return 0
-       ;;
-     --list-mounts)
-       __copilot_list_mounts
-       return 0
-       ;;
-     --save-mount)
-       shift
-       if [ -z "$1" ]; then
-         echo "❌ Error: --save-mount requires a path argument"
-         return 1
-       fi
-       __copilot_save_mount "$1" "false"
-       return 0
-       ;;
-     --save-mount-global)
-       shift
-       if [ -z "$1" ]; then
-         echo "❌ Error: --save-mount-global requires a path argument"
-         return 1
-       fi
-       __copilot_save_mount "$1" "true"
-       return 0
-       ;;
-     --remove-mount)
-       shift
-       if [ -z "$1" ]; then
-         echo "❌ Error: --remove-mount requires a path argument"
-         return 1
-       fi
-       __copilot_remove_mount "$1"
-       return 0
-       ;;
-     --list-images)
-       __copilot_list_images
-       return 0
-       ;;
-     --show-image)
-       __copilot_show_default_image
-       return 0
-       ;;
-     --set-image)
-       shift
-       if [ -z "$1" ]; then
-         echo "❌ Error: --set-image requires an image tag argument"
-         return 1
-       fi
-       __copilot_save_image_config "$1" "false"
-       return 0
-       ;;
-     --set-image-global)
-       shift
-       if [ -z "$1" ]; then
-         echo "❌ Error: --set-image-global requires an image tag argument"
-         return 1
-       fi
-       __copilot_save_image_config "$1" "true"
-       return 0
-       ;;
-     --mount)
-       shift
-       if [ -z "$1" ]; then
-         echo "❌ Error: --mount requires a path argument"
-         return 1
-       fi
-       mounts_ro+=("$1")
-       shift
-       ;;
-     --mount-rw)
-       shift
-       if [ -z "$1" ]; then
-         echo "❌ Error: --mount-rw requires a path argument"
-         return 1
-       fi
-       mounts_rw+=("$1")
-       shift
-       ;;
-      -d|--dotnet)
-        image_tag="dotnet"
-        shift
-        ;;
-      -d8|--dotnet8)
-        image_tag="dotnet-8"
-        shift
-        ;;
-      -d9|--dotnet9)
-        image_tag="dotnet-9"
-        shift
-        ;;
-      -d10|--dotnet10)
-        image_tag="dotnet-10"
-        shift
-        ;;
-      -dp|--dotnet-playwright)
-        image_tag="dotnet-playwright"
-        shift
-        ;;
-      --no-cleanup)
-        skip_cleanup="true"
-        shift
-        ;;
-      --no-pull)
-        skip_pull="true"
-        shift
-        ;;
-      --update-scripts|--upgrade-scripts)
-        __copilot_update_scripts
-        return $?
-        ;;
-      *)
-        args+=("$1")
-        shift
-        ;;
-    esac
+  # Handle --update and variants before binary check
+  local arg
+  for arg in "$@"; do
+    if __copilot_is_update_arg "$arg"; then
+      __copilot_debug "Update argument detected"
+      __copilot_update
+      return $?
+    fi
   done
   
+  # Handle --reset before binary check
+  for arg in "$@"; do
+    if __copilot_is_reset_arg "$arg"; then
+      __copilot_debug "Reset argument detected"
+      __copilot_reset
+      return $?
+    fi
+  done
+  
+  # Check for updates at startup
+  __copilot_debug "Checking for updates..."
   __copilot_check_for_updates || return 0
   
-  __copilot_run "$image_tag" "true" "$skip_cleanup" "$skip_pull" mounts_ro mounts_rw "${args[@]}"
+  __copilot_debug "Ensuring binary is installed..."
+  __copilot_ensure_binary || return 1
+  
+  __copilot_debug "Executing binary in YOLO mode: $COPILOT_HERE_BIN --yolo $*"
+  "$COPILOT_HERE_BIN" --yolo "$@"
+  local exit_code=$?
+  __copilot_debug "Binary exited with code: $exit_code"
+  return $exit_code
 }
