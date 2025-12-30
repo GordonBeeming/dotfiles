@@ -161,20 +161,10 @@ case ":$PATH:" in
 esac
 # pnpm end
 
-yolo() {
-  if [[ "$1" == "--help" ]]; then
-    echo "=== YOLO Command ==="
-    echo "Alias for: copilot_yolo"
-    echo ""
-    copilot_yolo --help
-    return 0
-  fi
-  copilot_yolo "$@"
-}
-source ~/.copilot_here.sh
-
 # Added by get-aspire-cli.sh
 export PATH="$HOME/.aspire/bin:$PATH"
+
+alias yolo="copilot_yolo"
 
 # >>> copilot_here >>>
 # Ensure user bin directory is on PATH
