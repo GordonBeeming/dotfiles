@@ -175,3 +175,10 @@ if [ -f "$HOME/.copilot_here.sh" ]; then
   source "$HOME/.copilot_here.sh"
 fi
 # <<< copilot_here <<<
+
+# opencode
+export PATH=/Users/gordonbeeming/.opencode/bin:$PATH
+
+test -e "${HOME}/.iterm2_shell_integration.zsh" && source "${HOME}/.iterm2_shell_integration.zsh"
+
+alias sshoak='ssh -t pokedex "sudo -i"'
